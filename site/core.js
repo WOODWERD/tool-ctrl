@@ -211,6 +211,50 @@ export function removeNewBox(rec, id) {
   if (p && rec.meta.counters[p.prefix] === p.n) rec.meta.counters[p.prefix] = Math.max(0, ...rec.containers.filter((c) => c.prefix === p.prefix).map((c) => c.n));
 }
 
+// ---------- read from photo (TC-R31 to TC-R35) ----------
+const norm = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+const compact = (s) => norm(s).replace(/ /g, '');
+const pairs = (s) => { const t = compact(s), out = []; for (let i = 0; i < t.length - 1; i++) out.push(t.slice(i, i + 2)); return out; };
+function dice(a, b) {
+  const x = pairs(a), y = pairs(b); if (!x.length || !y.length) return 0;
+  const m = new Map(); for (const p of y) m.set(p, (m.get(p) || 0) + 1);
+  let hit = 0; for (const p of x) if (m.get(p)) { hit++; m.set(p, m.get(p) - 1); }
+  return (2 * hit) / (x.length + y.length);
+}
+// Lines of text read from a photo become suggestions: a catalog match (ticked), a guess (unticked), or already here.
+// candidates: catalog entries { name, brand, kind, tier }. Nothing is added here; the person confirms (TC-R32).
+export function suggestFromText(rec, place, lines, candidates, brands = BOX_MAKERS) {
+  const out = [], seen = new Set();
+  const brandWords = new Set(brands.map((b) => compact(b)));
+  for (const raw of lines) {
+    const line = String(raw).replace(/\s+/g, ' ').trim();
+    const L = compact(line), words = new Set(norm(line).split(' '));
+    if (L.replace(/[^A-Z0-9]/g, '').length < 3 || brandWords.has(L) || !/[A-Z]/.test(L)) continue;
+    let best = null, score = 0;
+    for (const cand of candidates) {
+      const C = compact(cand.name);
+      if (C.length < 3) continue;
+      const cw = norm(cand.name).split(' ').filter((w) => w.length > 1);
+      let s = 0;
+      if (L.includes(C)) s = 2 + C.length; // the model name appears in what was read
+      else if (cw.length > 1 && cw.every((w) => words.has(w))) s = 1 + C.length; // every word of a generic name
+      else { const d = dice(line, cand.name); if (d >= 0.8) s = d; }
+      if (s > score) { score = s; best = cand; }
+    }
+    const key = best ? `${best.brand}|${best.name}` : `?|${L}`;
+    if (seen.has(key)) continue; seen.add(key);
+    if (best) {
+      const here = alreadyIn(rec, place, best.name, best.brand);
+      out.push({ name: best.name, brand: best.brand || '', kind: best.kind || '', tier: best.tier || 'power', c1: best.c1 || '', c2: best.c2 || '', read: line, status: here ? 'here' : 'match', on: !here });
+    } else {
+      const name = line.slice(0, 60);
+      out.push({ name, brand: '', kind: '', tier: 'hand', read: line, status: alreadyIn(rec, place, name) ? 'here' : 'guess', on: false });
+    }
+  }
+  const rank = { match: 0, guess: 1, here: 2 };
+  return out.sort((a, b) => rank[a.status] - rank[b.status]);
+}
+
 // TC-R35: a suggestion or tick for something already in that place
 export const alreadyIn = (rec, place, name, brand = '') =>
   itemsIn(rec, place).some((i) => i.name.toLowerCase() === String(name).toLowerCase() && (!brand || !i.brand || i.brand.toLowerCase() === brand.toLowerCase()));

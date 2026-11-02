@@ -140,6 +140,24 @@ test('TC-A33 my tools move into a box, and back again', () => {
   assert.equal(own.box.id, 'WW-003'); assert.equal(own.box.name, 'DRILL'); assert.equal(drill.place, 'WW-003');
 });
 
+test('TC-A20 text read from a photo becomes suggestions, nothing added until confirmed', () => {
+  const r = fresh();
+  const box = c.addContainer(r, { name: 'ROLLING CHEST' }); c.addCompartments(r, box.id, 'D', 5);
+  c.addItem(r, { name: 'Speed square', tier: 'Hand', place: 'WW-001-D5' });
+  const before = r.items.length;
+  const lines = ['FESTOOL', 'TS 55 FEBQ-Plus', 'COMBINATION SQUARE 300', '5m/16ft', '~ ~', 'SPEED SQUARE', 'ts 55 f'];
+  const s = c.suggestFromText(r, 'WW-001-D5', lines, [...tickList('', 'All'), ...tickList('', HAND_TOOLS)]);
+  assert.equal(r.items.length, before); // nothing added (TC-R32)
+  const by = Object.fromEntries(s.map((x) => [x.read, x]));
+  assert.equal(by['TS 55 FEBQ-Plus'].name, 'TS 55 F'); assert.equal(by['TS 55 FEBQ-Plus'].brand, 'Festool'); assert.equal(by['TS 55 FEBQ-Plus'].status, 'match'); assert.equal(by['TS 55 FEBQ-Plus'].on, true);
+  assert.equal(by['COMBINATION SQUARE 300'].name, 'Combination square'); assert.equal(by['COMBINATION SQUARE 300'].status, 'match');
+  assert.equal(by['5m/16ft'].status, 'guess'); assert.equal(by['5m/16ft'].on, false);
+  assert.equal(by['SPEED SQUARE'].status, 'here'); assert.equal(by['SPEED SQUARE'].on, false); // TC-R35
+  assert.ok(!by.FESTOOL && !by['~ ~']); // a brand alone and noise are skipped
+  assert.ok(!by['ts 55 f']); // the same tool read twice is listed once
+  assert.deepEqual(s.map((x) => x.status), ['match', 'match', 'guess', 'here']);
+});
+
 test('TC-A27 hand tools come with no brand', () => {
   const { r } = withChest();
   for (const t of tickList('', HAND_TOOLS).slice(0, 3)) c.addItem(r, { name: t.name, kind: t.kind, tier: 'Hand', place: 'WW-001-D1', source: 'Catalog' });

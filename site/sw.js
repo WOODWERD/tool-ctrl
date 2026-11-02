@@ -1,7 +1,7 @@
 // Offline copy of the app. Online always gets the newest files; the saved copy is only the fallback.
 // All WOODWERD tools share one web address, so this clears only Tool Ctrl's own old copies.
-const VERSION = 'tool-ctrl-x0.0.2';
-const FILES = ['./', 'index.html', 'tokens.css', 'styles.css', 'chrome.js', 'core.js', 'catalog.js', 'store.js', 'github.js', 'sync.js', 'app.js', 'manifest.webmanifest',
+const VERSION = 'tool-ctrl-x0.0.3';
+const FILES = ['./', 'index.html', 'tokens.css', 'styles.css', 'chrome.js', 'core.js', 'catalog.js', 'store.js', 'github.js', 'sync.js', 'reader.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png', 'fonts/Inter-Regular.woff2', 'fonts/Inter-Medium.woff2', 'fonts/Inter-SemiBold.woff2',
   'fonts/Inter-Bold.woff2', 'fonts/jetbrains-mono-latin-400-normal.woff2', 'fonts/jetbrains-mono-latin-500-normal.woff2'];
 

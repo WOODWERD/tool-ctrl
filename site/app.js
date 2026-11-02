@@ -5,6 +5,7 @@ const MY = 'My tools';
 import { loadRecord, saveRecord, storageUse, askToKeep, loadSync, saveSync } from './store.js';
 import { client, repoError } from './github.js';
 import { syncOnce, waiting } from './sync.js';
+import { tickList as catalogList } from './catalog.js';
 
 const $ = (id) => document.getElementById(id);
 // h('div', {class: 'x', onclick: fn}, 'text', child): every string goes in as text, never as markup
@@ -25,6 +26,7 @@ const ICON = {
   search: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
   plus: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   x: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>',
+  camera: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4Z"/><circle cx="12" cy="13" r="3.5"/></svg>',
 };
 const icon = (k) => h('span', { html: ICON[k], style: 'display:inline-flex' });
 const GH = () => (matchMedia('(pointer:coarse)').matches ? 44 : 34), ROW = 48;
@@ -259,7 +261,7 @@ function boxesView() {
     rows.push({ g: true, el: () => ghead('b', g.name, g.rows.length, fo, () => fold('b', g.name)) });
     if (!fo) for (const x of g.rows) rows.push({ el: () => {
       const n = c.itemsIn(r, x.id, true).length, ks = c.compsOf(r, x.id).length;
-      return h('button', { type: 'button', class: `brow${x.id === S.box ? ' sel' : ''}${x.status === 'retired' ? ' retired' : ''}`, onclick: () => { S.box = x.id; S.place = ''; S.tick = null; render(); } },
+      return h('button', { type: 'button', class: `brow${x.id === S.box ? ' sel' : ''}${x.status === 'retired' ? ' retired' : ''}`, onclick: () => { S.box = x.id; S.place = ''; S.tick = null; dropPhoto(); render(); } },
         h('span', { class: 'bid' }, x.id), h('span', { class: 'bnm' }, h('b', {}, x.name || 'No name'), h('small', {}, [x.kindOfBox, ks ? `${ks} ${ks === 1 ? 'compartment' : 'compartments'}` : x.kind, x.status === 'retired' ? 'Retired' : ''].filter(Boolean).join(' · '))), h('span', { class: 'bn' }, c.fmt(n)));
     } });
   }
@@ -297,22 +299,23 @@ function boxDetail() {
   return h('section', { class: 'tier detailcol' },
     h('div', { class: 'tier-h' }, h('span', { class: 'n' }, 2), h('h2', { class: 'mono' }, x.id), h('span', { class: 'tier-d' }, [x.kindOfBox, w.location].filter(Boolean).join(' · ')), h('span', { class: `tier-s ${x.status === 'retired' ? 'idle' : 'ok'}` }, x.status === 'retired' ? 'Retired' : nOf(total, 'tool'))),
     h('div', { class: 'pad' },
-      h('button', { type: 'button', class: 'backlink', onclick: () => { S.box = ''; S.tick = null; render(); } }, '‹ Boxes'),
+      h('button', { type: 'button', class: 'backlink', onclick: () => { S.box = ''; S.tick = null; dropPhoto(); render(); } }, '‹ Boxes'),
       h('dl', { class: 'read' },
         rd('Name', x.name || 'No name'), rd('Kind of box', x.kindOfBox), rd('Location', [w.location, ...w.via].filter(Boolean).join(' · on ') || 'Not set'),
         rd('Sits on', x.sitsOn || 'Nothing'), rd('Kind', x.kind || '—'), rd('Status', x.status === 'retired' ? 'Retired' : 'Active'),
         x.notes && rd('Notes', x.notes)),
       x.status === 'active' && h('div', { class: 'row edit' },
         h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = S.place; S.tickAdded = []; S.tickNew = false; S.tickBrand = c.myTools(rec(), S.place).length ? MY : 'All'; render(); } }, icon('plus'), 'Add tools'),
+        h('button', { type: 'button', class: 'key', onclick: () => { S.tick = null; S.photo = { place: S.place, state: 'pick' }; render(); } }, h('span', { html: ICON.camera, style: 'display:inline-flex' }), 'Read from photo'),
         h('button', { type: 'button', class: 'key', onclick: () => drawersDialog(x.id) }, 'Add drawers'),
         h('button', { type: 'button', class: 'key', onclick: () => boxDialog(x.id) }, 'Edit box'),
         h('span', { class: 'sp' }),
         h('button', { type: 'button', class: 'key', onclick: () => retireDialog(x.id) }, 'Retire')),
       (ks.length > 0 || cur.n === 0) && h('div', { class: 'stack', style: 'gap:8px' },
         h('div', { class: 'sub' }, h('h3', {}, ks.length ? 'Compartments' : 'Contents'), h('span', { class: 'small' }, ks.length ? 'Drawers count from the top' : 'No drawers or trays. Add drawers if this box has them.')),
-        ks.length > 0 && h('div', { class: 'list' }, places.map((p) => h('button', { type: 'button', class: `crow${p.id === S.place ? ' sel' : ''}`, onclick: () => { S.place = p.id; if (S.tick) S.tick = p.id; render(); } },
+        ks.length > 0 && h('div', { class: 'list' }, places.map((p) => h('button', { type: 'button', class: `crow${p.id === S.place ? ' sel' : ''}`, onclick: () => { S.place = p.id; if (S.tick) S.tick = p.id; if (S.photo && S.photo.state === 'pick') S.photo.place = p.id; render(); } },
           h('span', { class: 'cid' }, p.id === x.id ? x.id : p.id), h('span', {}, p.name), h('span', { class: 'cn' }, c.fmt(p.n)))))),
-      S.tick ? tickPanel(S.tick) : h('div', { class: 'stack', style: 'gap:8px' },
+      S.photo && !S.phone ? photoPanel(x) : S.tick ? tickPanel(S.tick) : h('div', { class: 'stack', style: 'gap:8px' },
         h('div', { class: 'sub' }, h('h3', { class: 'mono' }, cur.id), h('span', { class: 'small' }, `${cur.name} · ${c.fmt(cur.n)} ${cur.n === 1 ? 'tool' : 'tools'}`),
           S.place !== x.id && h('button', { type: 'button', class: 'key edit', style: 'margin-left:auto', onclick: () => compDialog(S.place) }, 'Rename')),
         itemList(c.itemsIn(r, S.place), false, S.place))));
@@ -392,6 +395,64 @@ function tickPanel(place) {
       h('button', { type: 'button', class: 'key', onclick: () => itemDialog(null, { place: where, name: S.tickQ }) }, 'Can\'t find it? Type a tool'),
       h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = null; S.tickAdded = []; S.tickQ = ''; render(); } }, 'Done')),
     h('p', { class: 'small', style: 'margin:0' }, `Tool names belong to their makers. Check the name against your tool. List of ${CATALOG_DATE}. Hand tools are listed without a brand.`));
+}
+
+// ---- Read from photo (TC-S12, TC-R30 to TC-R35). The photo lives only in memory and is let go on Add or Cancel. ----
+function dropPhoto() { if (S.photo?.url) URL.revokeObjectURL(S.photo.url); S.photo = null; }
+async function takePhoto(file) {
+  if (!file || !S.photo) return;
+  if (S.photo.url) URL.revokeObjectURL(S.photo.url);
+  const p = S.photo;
+  Object.assign(p, { state: 'reading', progress: 0, url: URL.createObjectURL(file), sugg: [], error: '' });
+  render();
+  try {
+    const { readPhoto } = await import('./reader.js');
+    const lines = await readPhoto(file, (k) => { if (S.photo === p) { p.progress = k; const bar = $('photoPct'); if (bar) bar.textContent = `${Math.round(k * 100)} %`; } });
+    if (S.photo !== p) return;
+    p.sugg = c.suggestFromText(rec(), p.place, lines, [...catalogList('', 'All', true), ...catalogList('', HAND_TOOLS)]);
+    p.state = 'done';
+  } catch (e) {
+    if (S.photo !== p) return;
+    p.state = 'error'; p.error = 'The photo couldn\'t be read on this device. Try another photo, or type the tools.';
+  }
+  render();
+}
+function photoPanel(x) {
+  const p = S.photo, r = rec();
+  const camIn = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true, onchange: (e) => { takePhoto(e.target.files[0]); e.target.value = ''; } });
+  const k = c.getComp(r, p.place);
+  const title = h('div', { class: 'sub' }, h('h3', {}, 'Read from photo · ', h('span', { class: 'mono' }, p.place)), h('span', { class: 'small' }, k ? (k.name || c.COMP_TYPES[k.type]) : x.name));
+  const cancel = h('button', { type: 'button', class: 'key', onclick: () => { dropPhoto(); render(); } }, 'Cancel');
+  const pic = p.url && h('div', { class: 'photo' }, h('img', { src: p.url, alt: `Photo of ${p.place}` }), h('span', { class: 'small' }, 'Held only until you add or cancel, then discarded. It is never saved or synced.'));
+  if (p.state === 'pick') return h('div', { class: 'panel' }, title, camIn,
+    h('p', { class: 'small', style: 'margin:0' }, 'Take a photo of the open box or drawer, close enough to read the names on the tools and labels. On a computer, choose a photo file. It is read on this device and never kept.'),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'key go', onclick: () => camIn.click() }, h('span', { html: ICON.camera, style: 'display:inline-flex' }), 'Take or choose a photo'), cancel));
+  if (p.state === 'reading') return h('div', { class: 'panel' }, title,
+    h('div', { class: 'split even', style: 'gap:13px' }, h('div', { class: 'stack' }, h('div', { class: 'health' }, h('b', {}, 'Reading the photo'), h('span', { class: 'mono', id: 'photoPct' }, `${Math.round((p.progress || 0) * 100)} %`)),
+      h('p', { class: 'small', style: 'margin:0' }, 'The first photo takes longer while the reader loads. After that it works offline.'), h('div', { class: 'row' }, cancel)), pic));
+  if (p.state === 'error') return h('div', { class: 'panel' }, title, camIn, h('div', { class: 'health bad' }, h('b', {}, 'Not read'), h('span', {}, p.error)),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'key go', onclick: () => camIn.click() }, 'Retake'), cancel));
+  const on = p.sugg.filter((s) => s.on && s.status !== 'here');
+  const status = { match: ['st ok', 'Catalog match'], guess: ['st', 'Guess'], here: ['st none', 'Already here'] };
+  const rows = p.sugg.map((s) => h('div', { class: 'sugg' },
+    h('span', { class: 'cb' }, h('input', { type: 'checkbox', checked: s.on, disabled: s.status === 'here', 'aria-label': `Add ${s.name}`, onchange: (e) => { s.on = e.target.checked; render(); } })),
+    h('span', { class: 'nm' }, s.status === 'here' ? h('b', {}, s.name) : h('input', { class: 'in', value: s.name, 'aria-label': 'Name', style: 'height:30px', oninput: (e) => { s.name = e.target.value; } }),
+      h('small', {}, `read “${s.read}”${s.brand ? ` · ${s.brand}` : ''}`)),
+    h('span', { class: status[s.status][0] }, status[s.status][1])));
+  return h('div', { class: 'panel' }, title, camIn,
+    h('div', { class: 'split even', style: 'gap:13px' },
+      h('div', { class: 'stack' },
+        p.sugg.length ? h('span', { class: 'small' }, `${nOf(p.sugg.length, 'name')} read. Nothing is added until you confirm. Ticked ones are catalog matches; tick a guess to add it as read.`)
+          : h('div', { class: 'empty' }, h('b', {}, 'Nothing recognised in this photo'), h('span', {}, 'Get closer to the names, with even light, or type the tools.')),
+        p.sugg.length > 0 && h('div', { class: 'list' }, rows),
+        h('div', { class: 'row' },
+          h('button', { type: 'button', class: 'key go', disabled: !on.length, onclick: () => {
+            const made = on.filter((s) => s.name.trim()).map((s) => c.addItem(r, { name: s.name.trim(), brand: s.brand, kind: s.kind, tier: { power: 'Power', hand: 'Hand', consumable: 'Consumable' }[s.tier] || 'Power', place: p.place, source: 'Photo' }));
+            dropPhoto(); change(() => {}, { items: made.map((i) => i.uid) });
+            offerUndo(`Added ${nOf(made.length, 'tool')} from the photo`, () => { const ids = new Set(made.map((i) => i.uid)); r.items = r.items.filter((i) => !ids.has(i.uid)); all = true; });
+          } }, on.length ? `Add ${nOf(on.length, 'tool')}` : 'Add tools'),
+          h('button', { type: 'button', class: 'key', onclick: () => camIn.click() }, 'Retake'), cancel)),
+      pic));
 }
 
 // ---- Items (TC-S10, TC-S11) ----
