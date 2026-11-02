@@ -1,0 +1,203 @@
+// The tool catalog, shared with Box Ctrl (BX-R101 to BX-R109), plus Tool Ctrl's generic hand tools (TC-R25).
+// Written by hand: names, plus our own short wording.
+// Nothing here is copied from a maker's site, catalogue, PDF or feed. No part numbers, specs, prices or links.
+// Product names belong to their owners and are used only to identify the tools.
+export const CATALOG_DATE = '2026-11-01';
+
+// name, kind, contents line 1, contents line 2, icon, tier
+const FESTOOL = [
+  ['TS 55 F', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
+  ['TS 60 K', 'Track saw', 'Plunge saw · kickback stop', 'Blade · splinter guard', 'track-saw', 'power'],
+  ['TSC 55 K', 'Cordless track saw', 'Plunge saw · kickback stop', 'Blade · splinter guard', 'track-saw', 'power'],
+  ['HK 55', 'Carpentry saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['HKC 55 K', 'Cordless carpentry saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['CSC SYS 50', 'Cordless table saw', 'Table saw · blade', 'Rip fence · sliding table', 'table-saw', 'power'],
+  ['CARVEX PS 420', 'Jigsaw', 'Jigsaw · blades', 'Splinter guard', 'jigsaw', 'power'],
+  ['CARVEX PSC 420', 'Cordless jigsaw', 'Jigsaw · blades', 'Splinter guard', 'jigsaw', 'power'],
+  ['RSC 18', 'Reciprocating saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['VECTURO OSC 18', 'Oscillating multi-tool', 'Multi-tool · blades', 'Depth stop', 'multi-tool', 'power'],
+  ['OF 1010', 'Router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['OF 1400', 'Router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['OF 2200', 'Router', 'Router · base plates', 'Collets', 'router', 'power'],
+  ['OFK 700', 'Edge router', 'Edge router · bit', '', 'router', 'power'],
+  ['MFK 700', 'Modular trim router', 'Trim router · bases', '', 'router', 'power'],
+  ['DOMINO DF 500', 'Joiner', 'Domino · cutter', 'Trim stops', 'joiner', 'power'],
+  ['DOMINO DF 700', 'Joiner XL', 'Domino XL · cutter', 'Trim stops', 'joiner', 'power'],
+  ['HL 850', 'Planer', 'Planer · blade', 'Edge guide', 'planer', 'power'],
+  ['ETS EC 150/3', 'Random orbital sander', 'Sander · pad', '3 mm stroke', 'sander', 'power'],
+  ['ETS EC 150/5', 'Random orbital sander', 'Sander · pad', '5 mm stroke', 'sander', 'power'],
+  ['ETS EC 125/3', 'Random orbital sander', 'Sander · pad', '3 mm stroke', 'sander', 'power'],
+  ['ETS 150/3', 'Random orbital sander', 'Sander · pad', '3 mm stroke', 'sander', 'power'],
+  ['ETS 150/5', 'Random orbital sander', 'Sander · pad', '5 mm stroke', 'sander', 'power'],
+  ['ETS 125', 'Random orbital sander', 'Sander · pad', '', 'sander', 'power'],
+  ['ETSC 125', 'Cordless sander', 'Sander · pad', '', 'sander', 'power'],
+  ['ROTEX RO 90', 'Gear-driven sander', 'Sander · round pad', 'Delta pad', 'sander', 'power'],
+  ['ROTEX RO 125', 'Gear-driven sander', 'Sander · pad', 'Protector', 'sander', 'power'],
+  ['ROTEX RO 150', 'Gear-driven sander', 'Sander · pad', 'Protector', 'sander', 'power'],
+  ['RTS 400', 'Orbital sander', 'Sander · rectangular pad', '', 'sander', 'power'],
+  ['DTS 400', 'Delta sander', 'Sander · delta pad', '', 'sander', 'power'],
+  ['LS 130', 'Linear sander', 'Sander · profile pads', '', 'sander', 'power'],
+  ['T 18+3', 'Drill / driver', 'Drill · chucks', 'Bit holder', 'drill', 'power'],
+  ['TXS 18', 'Compact drill / driver', 'Drill · chuck', 'Bit holder', 'drill', 'power'],
+  ['CXS 18', 'Compact drill / driver', 'Drill · chucks', 'Bit holder', 'drill', 'power'],
+  ['C 18', 'Drill / driver', 'Drill · chucks', 'Bit holder', 'drill', 'power'],
+  ['TPC 18/4', 'Hammer drill / driver', 'Hammer drill · chucks', 'Side handle', 'drill', 'power'],
+  ['TID 18', 'Impact driver', 'Impact driver · bits', '', 'impact-driver', 'power'],
+  ['CTC SYS', 'Cordless extractor', 'Extractor · hose', 'Filter', 'extractor', 'power'],
+  ['SYSLITE', 'Work light', 'Light · stand', '', 'light', 'power'],
+  ['SYSROCK', 'Jobsite radio', 'Bluetooth radio', '', 'radio', 'power'],
+  ['DOMINO TENONS', 'Joinery', 'Beech tenons', '4 – 10 mm', 'tenon', 'consumable'],
+  ['GRANAT 150', 'Abrasives', 'Discs 150 mm', 'P80 – P400', 'abrasive', 'consumable'],
+  ['GRANAT 125', 'Abrasives', 'Discs 125 mm', 'P80 – P400', 'abrasive', 'consumable'],
+];
+
+const MILWAUKEE = [
+  ['M18 FUEL DRILL', 'Drill / driver', 'Drill · side handle', 'Battery · charger', 'drill', 'power'],
+  ['M18 FUEL HAMMER', 'Hammer drill / driver', 'Hammer drill · side handle', 'Battery · charger', 'hammer-drill', 'power'],
+  ['M18 FUEL IMPACT', 'Impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['M18 FUEL WRENCH', 'Impact wrench', 'Impact wrench · sockets', 'Battery · charger', 'impact-wrench', 'power'],
+  ['M18 FUEL ROTARY', 'Rotary hammer', 'SDS hammer · side handle', 'Depth stop', 'hammer-drill', 'power'],
+  ['M18 FUEL CIRC SAW', 'Circular saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['M18 FUEL TRACK SAW', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
+  ['M18 FUEL MITER SAW', 'Miter saw', 'Miter saw · blade', 'Dust bag', 'miter-saw', 'power'],
+  ['M18 FUEL TABLE SAW', 'Table saw', 'Table saw · blade', 'Rip fence', 'table-saw', 'power'],
+  ['M18 FUEL JIGSAW', 'Jigsaw', 'Jigsaw · blades', '', 'jigsaw', 'power'],
+  ['M18 FUEL SAWZALL', 'Reciprocating saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['M18 FUEL HACKZALL', 'One-handed recip saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['M18 FUEL MULTI-TOOL', 'Oscillating multi-tool', 'Multi-tool · blades', 'Depth stop', 'multi-tool', 'power'],
+  ['M18 FUEL GRINDER', 'Angle grinder', 'Grinder · guard', 'Side handle', 'grinder', 'power'],
+  ['M18 FUEL ROUTER', 'Compact router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['M18 FUEL SANDER', 'Random orbital sander', 'Sander · pad', 'Dust bag', 'sander', 'power'],
+  ['M18 FUEL BRAD NAILER', 'Brad nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['M18 FUEL FINISH NAIL', 'Finish nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['M18 FUEL FRAMING', 'Framing nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['M18 HEAT GUN', 'Heat gun', 'Heat gun · nozzles', '', 'heat-gun', 'power'],
+  ['M18 FUEL VAC', 'Wet / dry vacuum', 'Vacuum · hose', 'Filter', 'extractor', 'power'],
+  ['M18 FLOOD LIGHT', 'Work light', 'Flood light', '', 'light', 'power'],
+  ['M12 FUEL DRILL', 'Compact drill / driver', 'Drill · chuck', 'Battery · charger', 'drill', 'power'],
+  ['M12 FUEL INSTALL', 'Installation drill / driver', 'Drill · heads', 'Bit holder', 'drill', 'power'],
+  ['M12 FUEL IMPACT', 'Compact impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['M12 FUEL STUBBY', 'Compact impact wrench', 'Impact wrench · sockets', '', 'impact-wrench', 'power'],
+  ['M12 FUEL RATCHET', 'Cordless ratchet', 'Ratchet · sockets', '', 'ratchet', 'power'],
+  ['M12 FUEL HACKZALL', 'One-handed recip saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['M12 FUEL CUT OFF', 'Cut-off tool', 'Cut-off tool · wheels', '', 'grinder', 'power'],
+  ['M12 PIN NAILER', 'Pin nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['M12 BATTERIES', 'Batteries / chargers', 'M12 packs', 'Charger', 'battery', 'power'],
+  ['M18 BATTERIES', 'Batteries / chargers', 'M18 packs', 'Charger', 'battery', 'power'],
+  ['DRIVER BITS', 'Bits', 'Impact bits', 'Bit holders', 'bits', 'consumable'],
+  ['SAWZALL BLADES', 'Saw blades', 'Wood · metal', 'Demolition', 'saw-blade', 'consumable'],
+];
+
+// Plain descriptive names, not model numbers (BX-R106). Lines checked by web research 2026-11-01.
+const DEWALT = [
+  ['XR DRILL', 'Drill / driver', 'Drill · side handle', 'Battery · charger', 'drill', 'power'],
+  ['XR HAMMER DRILL', 'Hammer drill / driver', 'Hammer drill · side handle', 'Battery · charger', 'hammer-drill', 'power'],
+  ['XR IMPACT DRIVER', 'Impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['XR IMPACT WRENCH', 'Impact wrench', 'Impact wrench · sockets', 'Battery · charger', 'impact-wrench', 'power'],
+  ['ATOMIC DRILL', 'Compact drill / driver', 'Drill · bit holder', 'Battery · charger', 'drill', 'power'],
+  ['ATOMIC IMPACT', 'Compact impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['XR ROTARY HAMMER', 'Rotary hammer', 'SDS hammer · side handle', 'Depth stop', 'hammer-drill', 'power'],
+  ['XR CIRCULAR SAW', 'Circular saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['FLEXVOLT TRACK SAW', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
+  ['FLEXVOLT MITER SAW', 'Miter saw', 'Miter saw · blade', 'Dust bag', 'miter-saw', 'power'],
+  ['FLEXVOLT TABLE SAW', 'Table saw', 'Table saw · blade', 'Rip fence', 'table-saw', 'power'],
+  ['XR JIGSAW', 'Jigsaw', 'Jigsaw · blades', '', 'jigsaw', 'power'],
+  ['XR RECIP SAW', 'Reciprocating saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['XR MULTI-TOOL', 'Oscillating multi-tool', 'Multi-tool · blades', 'Depth stop', 'multi-tool', 'power'],
+  ['XR GRINDER', 'Angle grinder', 'Grinder · guard', 'Side handle', 'grinder', 'power'],
+  ['XR COMPACT ROUTER', 'Compact router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['XR ORBIT SANDER', 'Random orbital sander', 'Sander · pad', 'Dust bag', 'sander', 'power'],
+  ['XR PLANER', 'Planer', 'Planer · blades', 'Edge guide', 'planer', 'power'],
+  ['XR BRAD NAILER', 'Brad nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['XR FINISH NAILER', 'Finish nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['XR FRAMING NAILER', 'Framing nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['XR WET DRY VAC', 'Wet / dry vacuum', 'Vacuum · hose', 'Filter', 'extractor', 'power'],
+  ['XR WORK LIGHT', 'Work light', 'Light', '', 'light', 'power'],
+  ['20V BATTERIES', 'Batteries / chargers', '20V packs', 'Charger', 'battery', 'power'],
+  ['FLEXVOLT BATTERIES', 'Batteries / chargers', 'FLEXVOLT packs', 'Charger', 'battery', 'power'],
+];
+
+const BOSCH = [
+  ['PROFACTOR DRILL', 'Drill / driver', 'Drill · side handle', 'Battery · charger', 'drill', 'power'],
+  ['PROFACTOR HAMMER', 'Hammer drill / driver', 'Hammer drill · side handle', 'Battery · charger', 'hammer-drill', 'power'],
+  ['PROFACTOR WRENCH', 'Impact wrench', 'Impact wrench · sockets', 'Battery · charger', 'impact-wrench', 'power'],
+  ['PROFACTOR CIRC SAW', 'Circular saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['PROFACTOR TRACK SAW', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
+  ['PROFACTOR MITER SAW', 'Miter saw', 'Miter saw · blade', 'Dust bag', 'miter-saw', 'power'],
+  ['18V IMPACT DRIVER', 'Impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['18V ROTARY HAMMER', 'Rotary hammer', 'SDS hammer · side handle', 'Depth stop', 'hammer-drill', 'power'],
+  ['18V JIGSAW', 'Jigsaw', 'Jigsaw · blades', '', 'jigsaw', 'power'],
+  ['18V RECIP SAW', 'Reciprocating saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['18V MULTI-TOOL', 'Oscillating multi-tool', 'Multi-tool · blades', 'Depth stop', 'multi-tool', 'power'],
+  ['18V GRINDER', 'Angle grinder', 'Grinder · guard', 'Side handle', 'grinder', 'power'],
+  ['18V PALM ROUTER', 'Palm router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['18V ORBIT SANDER', 'Random orbital sander', 'Sander · pad', 'Dust bag', 'sander', 'power'],
+  ['18V VACUUM', 'Wet / dry vacuum', 'Vacuum · hose', 'Filter', 'extractor', 'power'],
+  ['12V DRILL', 'Compact drill / driver', 'Drill · bit holder', 'Battery · charger', 'drill', 'power'],
+  ['12V IMPACT', 'Compact impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['LASER LEVEL', 'Line laser', 'Laser · mount', 'Target plate', 'laser-level', 'power'],
+  ['18V BATTERIES', 'Batteries / chargers', '18V packs', 'Charger', 'battery', 'power'],
+];
+
+const MAKITA = [
+  ['LXT DRILL', 'Drill / driver', 'Drill · side handle', 'Battery · charger', 'drill', 'power'],
+  ['LXT HAMMER DRILL', 'Hammer drill / driver', 'Hammer drill · side handle', 'Battery · charger', 'hammer-drill', 'power'],
+  ['LXT IMPACT DRIVER', 'Impact driver', 'Impact driver · bits', 'Battery · charger', 'impact-driver', 'power'],
+  ['LXT IMPACT WRENCH', 'Impact wrench', 'Impact wrench · sockets', 'Battery · charger', 'impact-wrench', 'power'],
+  ['LXT ROTARY HAMMER', 'Rotary hammer', 'SDS hammer · side handle', 'Depth stop', 'hammer-drill', 'power'],
+  ['LXT CIRCULAR SAW', 'Circular saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
+  ['LXT MITER SAW', 'Miter saw', 'Miter saw · blade', 'Dust bag', 'miter-saw', 'power'],
+  ['LXT JIGSAW', 'Jigsaw', 'Jigsaw · blades', '', 'jigsaw', 'power'],
+  ['LXT RECIP SAW', 'Reciprocating saw', 'Saw · blades', '', 'recip-saw', 'power'],
+  ['LXT MULTI-TOOL', 'Oscillating multi-tool', 'Multi-tool · blades', 'Depth stop', 'multi-tool', 'power'],
+  ['LXT GRINDER', 'Angle grinder', 'Grinder · guard', 'Side handle', 'grinder', 'power'],
+  ['LXT COMPACT ROUTER', 'Compact router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['LXT ORBIT SANDER', 'Random orbital sander', 'Sander · pad', 'Dust bag', 'sander', 'power'],
+  ['LXT PLANER', 'Planer', 'Planer · blades', 'Edge guide', 'planer', 'power'],
+  ['LXT PIN NAILER', 'Pin nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['LXT FINISH NAILER', 'Finish nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['LXT FRAMING NAILER', 'Framing nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['LXT DUST EXTRACTOR', 'Wet / dry extractor', 'Extractor · hose', 'Filter', 'extractor', 'power'],
+  ['LXT WORK LIGHT', 'Work light', 'Light', '', 'light', 'power'],
+  ['XGT DRILL', 'Drill / driver', 'Drill · side handle', 'Battery · charger', 'drill', 'power'],
+  ['XGT TRACK SAW', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
+  ['XGT COMPACT ROUTER', 'Compact router', 'Router · edge guide', 'Collets', 'router', 'power'],
+  ['XGT PLANER', 'Planer', 'Planer · blades', 'Edge guide', 'planer', 'power'],
+  ['XGT ORBIT SANDER', 'Random orbital sander', 'Sander · pad', 'Dust bag', 'sander', 'power'],
+  ['XGT FRAMING NAILER', 'Framing nailer', 'Nailer · nose tips', '', 'nailer', 'power'],
+  ['LXT BATTERIES', 'Batteries / chargers', '18V packs', 'Charger', 'battery', 'power'],
+  ['XGT BATTERIES', 'Batteries / chargers', '40V packs', 'Charger', 'battery', 'power'],
+];
+
+// Generic hand tools, no brand (TC-R25). name, kind
+const HAND = [
+  ['Screwdriver set', 'Screwdrivers'], ['Precision screwdriver set', 'Screwdrivers'], ['Stubby screwdriver', 'Screwdrivers'], ['Bit holder', 'Screwdrivers'], ['Driver bit set', 'Bits'],
+  ['Hex key set, metric', 'Hex keys'], ['Hex key set, inch', 'Hex keys'], ['Torx key set', 'Hex keys'],
+  ['Combination pliers', 'Pliers'], ['Long-nose pliers', 'Pliers'], ['Flat-nose pliers', 'Pliers'], ['Slip-joint pliers', 'Pliers'], ['Water pump pliers', 'Pliers'], ['Pliers wrench', 'Pliers'],
+  ['Locking pliers', 'Pliers'], ['Circlip pliers', 'Pliers'], ['Fencing pliers', 'Pliers'], ['Crimping pliers', 'Pliers'], ['Wire stripper', 'Electrical'], ['Diagonal cutters', 'Cutters'], ['End cutters', 'Cutters'], ['Bolt cutters', 'Cutters'],
+  ['Socket set 1/4 in', 'Sockets'], ['Socket set 3/8 in', 'Sockets'], ['Socket set 1/2 in', 'Sockets'], ['Ratchet 1/4 in', 'Sockets'], ['Ratchet 3/8 in', 'Sockets'], ['Ratchet 1/2 in', 'Sockets'], ['Extension set', 'Sockets'], ['Torque wrench', 'Wrenches'],
+  ['Combination wrench set, metric', 'Wrenches'], ['Combination wrench set, inch', 'Wrenches'], ['Adjustable wrench', 'Wrenches'], ['Pipe wrench', 'Wrenches'],
+  ['Claw hammer', 'Hammers'], ['Framing hammer', 'Hammers'], ['Mallet', 'Hammers'], ['Dead-blow hammer', 'Hammers'], ['Nail set', 'Hammers'],
+  ['Tape measure', 'Measuring'], ['Folding rule', 'Measuring'], ['Steel rule', 'Measuring'], ['Combination square', 'Measuring'], ['Speed square', 'Measuring'], ['Framing square', 'Measuring'], ['Sliding bevel', 'Measuring'],
+  ['Marking gauge', 'Marking'], ['Marking knife', 'Marking'], ['Scribe', 'Marking'], ['Level, torpedo', 'Levels'], ['Level, 600 mm', 'Levels'], ['Level, 1200 mm', 'Levels'],
+  ['Chisel set', 'Chisels'], ['Block plane', 'Planes'], ['Smoothing plane', 'Planes'], ['Card scraper', 'Scrapers'], ['Rasp', 'Files'], ['File set', 'Files'],
+  ['Hand saw', 'Saws'], ['Pull saw', 'Saws'], ['Hacksaw', 'Saws'], ['Coping saw', 'Saws'], ['Utility knife', 'Knives'], ['Putty knife', 'Knives'],
+  ['F-clamp', 'Clamps'], ['Bar clamp', 'Clamps'], ['Spring clamp', 'Clamps'], ['Pry bar', 'Demolition'], ['Stud finder', 'Finding'], ['Voltage tester', 'Electrical'],
+];
+
+export const BRANDS = ['Festool', 'Milwaukee', 'DEWALT', 'Bosch', 'Makita'];
+export const HAND_TOOLS = 'Hand tools';
+const build = (brand, rows) => rows.map(([name, kind, c1, c2, icon, tier]) => ({ brand, name, kind, c1, c2, icon, tier }));
+export const CATALOG = [...build('Festool', FESTOOL), ...build('Milwaukee', MILWAUKEE), ...build('DEWALT', DEWALT), ...build('Bosch', BOSCH), ...build('Makita', MAKITA)];
+export const HAND_LIST = HAND.map(([name, kind]) => ({ brand: '', name, kind, c1: '', c2: '', icon: '', tier: 'hand' }));
+
+export function searchCatalog(q, brand = 'All', list = CATALOG) {
+  const words = String(q).trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return list.filter((c) => { const t = `${c.brand} ${c.name} ${c.kind}`.toLowerCase(); return (brand === 'All' || c.brand === brand) && words.every((w) => t.includes(w)); });
+}
+
+// Tool Ctrl's tick-list: brands plus Hand tools, consumables hidden unless asked for (TC-R22)
+export function tickList(q, brand = 'All', consumables = false) {
+  const list = brand === HAND_TOOLS ? HAND_LIST : brand === 'All' ? [...CATALOG, ...HAND_LIST] : CATALOG;
+  return searchCatalog(q, brand === HAND_TOOLS ? 'All' : brand, list).filter((c) => consumables || c.tier !== 'consumable');
+}
