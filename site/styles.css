@@ -252,3 +252,6 @@ dialog legend{font-size:var(--t-micro);font-weight:600;letter-spacing:.14em;text
 @media (max-width:767px){body{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}}
 dialog form>.f,dialog form>.row,dialog form>fieldset{flex:none}
 dialog fieldset .f{flex:1 1 160px}
+.key.connect{height:44px;background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600;padding:0 21px;font-size:var(--t-body)}
+.key.connect:hover:not(:disabled){background:var(--ok);opacity:.9}
+.stack>.f,.stack>.row{flex:none}

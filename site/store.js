@@ -41,6 +41,18 @@ export async function saveRecord(rec, changed = 'all') {
   return done(tx);
 }
 
+// Sync state: the record as last synced and GitHub's version of it. Kept beside the record, never in it or a backup.
+export async function loadSync() {
+  const d = await open();
+  return new Promise((ok) => { const rq = d.transaction('meta').objectStore('meta').get('sync'); rq.onsuccess = () => ok(rq.result || null); rq.onerror = () => ok(null); });
+}
+export async function saveSync(s) {
+  const d = await open();
+  const tx = d.transaction('meta', 'readwrite');
+  if (s) tx.objectStore('meta').put(s, 'sync'); else tx.objectStore('meta').delete('sync');
+  return done(tx);
+}
+
 // TC-S06: how full this browser's storage is, when it will say
 export async function storageUse() {
   try { const e = await navigator.storage.estimate(); return e.quota ? e.usage / e.quota : 0; } catch { return 0; }

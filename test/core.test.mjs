@@ -104,6 +104,42 @@ test('TC-A05 ticking tools adds them, marked Catalog', () => {
   assert.equal(got.length, 3); assert.ok(got.every((i) => i.source === 'Catalog' && i.brand === 'Festool'));
 });
 
+test('TC-A32 a standard tool in its own box takes the next number, and can be taken back', () => {
+  const r = fresh();
+  for (let i = 0; i < 66; i++) c.addContainer(r, { name: `S${i}` });
+  const ts = tickList('TS 55 F', 'Festool')[0], of = tickList('OF 1010', 'Festool')[0];
+  const a = c.toolInNewBox(r, ts, { location: 'Shop wall' }), b = c.toolInNewBox(r, of);
+  assert.equal(a.box.id, 'WW-067'); assert.equal(a.box.name, 'TS 55 F'); assert.equal(a.box.kind, 'Track saw'); assert.equal(a.box.location, 'Shop wall');
+  assert.deepEqual(c.itemsIn(r, 'WW-067').map((i) => i.name), ['TS 55 F', 'Plunge saw · blade', 'Splinter guard']);
+  assert.ok(c.itemsIn(r, 'WW-067').every((i) => i.source === 'Catalog'));
+  assert.equal(b.box.id, 'WW-068');
+  c.removeNewBox(r, 'WW-068');
+  assert.equal(c.getC(r, 'WW-068'), undefined); assert.equal(c.itemsIn(r, 'WW-068').length, 0);
+  assert.equal(c.nextId(r), 'WW-068');
+  c.removeNewBox(r, 'WW-001'); // not the highest: its number stays used
+  assert.equal(c.nextId(r), 'WW-068');
+});
+
+test('TC-A33 my tools move into a box, and back again', () => {
+  const r = fresh();
+  const chest = c.addContainer(r, { name: 'ROLLING CHEST' }); c.addCompartments(r, chest.id, 'D', 3);
+  const box12 = c.addContainer(r, { name: 'DRILL' });
+  const wrench = c.addItem(r, { name: 'Torque wrench', tier: 'Hand', looseAt: 'Loft bench' });
+  const drill = c.addItem(r, { name: 'Drill', brand: 'Festool', place: box12.id });
+  const list = c.myTools(r, 'WW-001-D3');
+  assert.deepEqual(list.map((i) => i.name), ['Torque wrench', 'Drill']); // Loose first
+  assert.deepEqual(c.myTools(r, 'WW-001-D3', 'drill').map((i) => i.name), ['Drill']);
+  c.moveItems(r, [wrench.uid], 'WW-001-D3', '2026-11-02');
+  const back = c.moveItems(r, [drill.uid], 'WW-001-D3', '2026-11-02');
+  assert.equal(c.itemsIn(r, 'WW-001-D3').length, 2);
+  assert.deepEqual(drill.history[0], { from: box12.id, to: 'WW-001-D3', date: '2026-11-02' });
+  assert.equal(c.myTools(r, 'WW-001-D3').length, 0);
+  c.undoMove(r, back);
+  assert.equal(drill.place, box12.id);
+  const own = c.itemInNewBox(r, drill.uid);
+  assert.equal(own.box.id, 'WW-003'); assert.equal(own.box.name, 'DRILL'); assert.equal(drill.place, 'WW-003');
+});
+
 test('TC-A27 hand tools come with no brand', () => {
   const { r } = withChest();
   for (const t of tickList('', HAND_TOOLS).slice(0, 3)) c.addItem(r, { name: t.name, kind: t.kind, tier: 'Hand', place: 'WW-001-D1', source: 'Catalog' });

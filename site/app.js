@@ -1,7 +1,10 @@
 // Tool Ctrl page. Rules live in core.js; this file draws them and handles input.
 import * as c from './core.js';
 import { tickList, BRANDS, HAND_TOOLS, CATALOG_DATE } from './catalog.js';
-import { loadRecord, saveRecord, storageUse, askToKeep } from './store.js';
+const MY = 'My tools';
+import { loadRecord, saveRecord, storageUse, askToKeep, loadSync, saveSync } from './store.js';
+import { client, repoError } from './github.js';
+import { syncOnce, waiting } from './sync.js';
 
 const $ = (id) => document.getElementById(id);
 // h('div', {class: 'x', onclick: fn}, 'text', child): every string goes in as text, never as markup
@@ -27,11 +30,12 @@ const icon = (k) => h('span', { html: ICON[k], style: 'display:inline-flex' });
 const GH = () => (matchMedia('(pointer:coarse)').matches ? 44 : 34), ROW = 48;
 
 const S = {
-  rec: null, view: 'boxes', box: '', place: '', tick: null, tickBrand: 'All', tickQ: '', tickCons: false, tickAdded: [],
+  rec: null, view: 'boxes', box: '', place: '', tick: null, tickBrand: 'All', tickQ: '', tickCons: false, tickAdded: [], tickNew: false, tickKob: 'Systainer',
   boxQ: '', boxGroup: 'location', fold: {}, scroll: {},
   q: '', f: { tier: '', location: '', warranty: '' }, by: 'box', sort: 'name', sel: new Set(),
   warF: '', warQ: '', warSel: '', plan: null, planFile: '', renumber: true, closeGaps: false, kindOfBox: 'Systainer', drawerRows: true, over: null, note: '',
   undo: null, phone: false, low: false, saving: false, saveFailed: false,
+  gh: null, sync: null, syncState: 'off', syncErr: null, conflict: null, choice: null, ghNote: '', connecting: false, renamedNote: '',
 };
 const rec = () => S.rec;
 const nOf = (n, one, many = one + 's') => `${c.fmt(n)} ${n === 1 ? one : many}`;
@@ -51,12 +55,85 @@ async function flush() {
   pending = { containers: new Set(), compartments: new Set(), items: new Set() }; all = false;
   try { await saveRecord(rec(), ch); S.saveFailed = false; } catch { S.saveFailed = true; }
   S.saving = false; leds();
+  later(); // TC-R65: changes go to GitHub a few seconds after the last edit
 }
 function leds() {
   const sv = $('ledSaved');
   sv.className = 'led ' + (S.saveFailed ? 'on-fault' : S.saving ? 'on-busy' : rec() ? 'on-ok' : '');
   sv.querySelector('span').textContent = S.saveFailed ? 'Not saved' : S.saving ? 'Saving' : rec() ? (S.low ? 'Saved · storage low' : 'Saved') : 'Nothing saved yet';
+  // TC-R67: Synced, Saving, Offline with a count, or Needs attention
+  const sy = $('ledSync'), n = S.sync && rec() ? waiting(S.sync.base, rec()) : 0;
+  const [cls, text] = !S.gh ? ['', 'Sync off'] : {
+    busy: ['on-busy', 'Syncing'], ok: ['on-ok', S.phone ? 'Synced · read only' : 'Synced'], conflict: ['on-busy', 'Sync · needs you'],
+    offline: ['on-busy', `Offline · ${n} unsent`], error: ['on-fault', n ? `Sync · ${n} waiting` : 'Sync · needs you'], off: ['', 'Sync off'],
+  }[S.syncState] || ['', 'Sync off'];
+  sy.className = 'led ' + cls; sy.querySelector('span').textContent = text;
+  sy.title = S.gh ? `GitHub: ${S.gh.repo}` : 'Not connected to GitHub';
 }
+
+// ---------- GitHub (TC-R60 to TC-R71) ----------
+const GH_KEY = 'toolctrl.github'; // the token lives here only, on this device (TC-R62)
+const loadConn = () => { try { const o = JSON.parse(localStorage.getItem(GH_KEY)); return o && o.repo && o.token ? o : null; } catch { return null; } };
+const saveConn = (o) => { try { if (o) localStorage.setItem(GH_KEY, JSON.stringify(o)); else localStorage.removeItem(GH_KEY); } catch { /* storage unavailable */ } };
+let syncTimer = 0, syncing = false, again = false;
+function later(ms = 4000) { if (!S.gh || S.phone || S.conflict) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, ms); }
+async function syncNow() {
+  if (!S.gh || !rec() || S.conflict || S.choice) return;
+  if (syncing) { again = true; return; }
+  if (!navigator.onLine) { S.syncState = 'offline'; leds(); render(); return; }
+  syncing = true; S.syncState = 'busy'; leds();
+  const snap = JSON.parse(JSON.stringify(rec()));
+  const res = await syncOnce({ gh: client(S.gh.repo, S.gh.token), repo: S.gh.repo, local: snap, base: S.sync?.base || null, sha: S.sync?.sha || null, phone: S.phone });
+  syncing = false;
+  await applySync(res, snap);
+  if (again) { again = false; later(500); }
+}
+async function applySync(res, snap) {
+  if (res.status === 'error') { S.syncState = res.error.kind === 'offline' ? 'offline' : 'error'; S.syncErr = res.error; leds(); render(); return; }
+  if (res.status === 'conflict') { S.conflict = res; S.syncState = 'conflict'; leds(); render(); return; }
+  // Edits made while the sync ran stay, on top of what came back
+  let next = res.record;
+  if (snap && !c.same(snap, rec())) next = c.mergeRecords(snap, rec(), res.record).record;
+  if (!c.same(next, rec())) { S.rec = next; all = true; await flush(); }
+  if (res.renamed?.length) S.renamedNote = res.renamed.map(([a, b]) => `${a} was also used on another device, so this one is now ${b}.`).join(' ');
+  S.sync = { ...S.sync, base: res.base, sha: res.sha, lastSync: new Date().toISOString(), lastMsg: res.message || S.sync?.lastMsg || '' };
+  S.syncState = 'ok'; S.syncErr = null;
+  await saveSync(S.sync);
+  leds(); render();
+}
+async function connect(repo, token) {
+  repo = repo.trim(); token = token.trim();
+  S.ghNote = repoError(repo) || (!token ? 'Paste the token from GitHub.' : '');
+  if (S.ghNote) { render(); return; }
+  S.connecting = true; render();
+  const api = client(repo, token);
+  const chk = await api.check();
+  const stop = (msg) => { S.connecting = false; S.ghNote = msg; render(); };
+  if (chk.error) return stop(chk.error.text);
+  if (!S.phone && !chk.canWrite) return stop(`This token can read ${repo} but not write to it. Give it Contents read and write.`);
+  // TC-A18: a new token for the same repo carries on from the last sync, keeping what waits here
+  if (S.gh && S.gh.repo === repo && S.sync?.base) {
+    S.gh = { repo, token }; saveConn(S.gh);
+    S.sync = { ...S.sync, private: chk.private }; S.syncErr = null; S.connecting = false; S.ghNote = '';
+    return syncNow();
+  }
+  const rem = await api.readRecord();
+  if (rem.error) return stop(rem.error.text);
+  S.gh = { repo, token }; saveConn(S.gh);
+  S.sync = { private: chk.private, base: null, sha: null }; S.connecting = false; S.ghNote = '';
+  if (rem.missing) { if (S.phone) { S.gh = null; saveConn(null); return stop(`There is no record in ${repo} yet. Connect a computer or iPad first; this phone only reads.`); } return syncNow(); }
+  const mine = rec() && rec().containers.length > 0;
+  // TC-R64: both have a record, so ask which to keep
+  if (mine && !S.phone && !c.same(rec(), rem.record)) { S.choice = { remote: rem.record, sha: rem.sha }; render(); return; }
+  await applySync({ status: 'synced', record: rem.record, base: rem.record, sha: rem.sha }, null);
+}
+function disconnect() {
+  clearTimeout(syncTimer);
+  S.gh = null; S.sync = null; S.syncState = 'off'; S.syncErr = null; S.conflict = null; S.choice = null;
+  saveConn(null); saveSync(null); leds(); render();
+}
+addEventListener('online', () => { if (S.gh) syncNow(); });
+addEventListener('offline', () => { if (S.gh) { S.syncState = 'offline'; leds(); } });
 
 // ---------- Undo (TC-R95) ----------
 function offerUndo(text, fn) {
@@ -151,8 +228,10 @@ function startView() {
   const fileIn = h('input', { type: 'file', accept: '.csv,.json,text/csv,application/json', hidden: true, onchange: (e) => openFile(e.target.files[0], () => begin(() => {})) });
   return area(1, 'Get started', S.phone ? 'Look things up here' : 'Name your boxes, then fill them', 'Nothing recorded yet', 'idle',
     S.phone ? h('div', { class: 'stack' },
-      h('p', { class: 'small', style: 'margin:0' }, 'Your record is built on a computer or iPad. Open a backup saved there to look things up on this phone.'),
-      h('div', { class: 'choices' }, h('button', { type: 'button', class: 'choice first', onclick: () => fileIn.click() }, h('b', {}, 'Open a backup'), h('span', {}, 'A Tool Ctrl backup file. It opens on this phone; nothing is uploaded.'))), fileIn)
+      h('p', { class: 'small', style: 'margin:0' }, 'Your record is built on a computer or iPad. Read it here from your GitHub repo, or open a backup saved there.'),
+      h('div', { class: 'choices' },
+        h('button', { type: 'button', class: 'choice first', onclick: () => { S.rec = c.emptyRecord(); S.view = 'record'; render(); } }, h('b', {}, 'Connect to GitHub'), h('span', {}, 'Read the record you keep in your own repo. A read-only token is enough on a phone.')),
+        h('button', { type: 'button', class: 'choice', onclick: () => fileIn.click() }, h('b', {}, 'Open a backup'), h('span', {}, 'A Tool Ctrl backup file. It opens on this phone; nothing is uploaded.'))), fileIn)
       : h('div', { class: 'stack', style: 'gap:21px' },
         h('div', { class: 'row', style: 'align-items:flex-start' },
           h('label', { class: 'f', style: 'flex:2 1 233px' }, h('span', {}, 'Owner name'), own),
@@ -196,7 +275,7 @@ function boxesView() {
         h('span', { class: 'count' }, h('b', {}, c.fmt(shown.length)), ' of ', h('b', {}, c.fmt(r.containers.length)), ' boxes')),
       rows.length ? vlist('b', rows) : h('div', { class: 'empty' }, h('b', {}, S.boxQ ? `No boxes match “${S.boxQ}”` : 'No boxes yet'), h('span', {}, S.boxQ ? 'Searched IDs, names, locations and the tools inside.' : 'Add a box, or import a list in Record.'),
         S.boxQ && h('button', { type: 'button', class: 'key', onclick: () => { S.boxQ = ''; render(); } }, 'Clear search')),
-      h('div', { class: 'row edit' }, h('button', { type: 'button', class: 'key', onclick: () => boxDialog() }, 'Add box'), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; render(); } }, 'Add standard tools'))));
+      h('div', { class: 'row edit' }, h('button', { type: 'button', class: 'key', onclick: () => boxDialog() }, 'Add box'), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; S.tickNew = true; S.tickAdded = []; if (S.tickBrand === MY) S.tickBrand = 'All'; render(); } }, 'Add standard tools'))));
   return h('div', { class: 'split' }, list, S.tick === 'loose' && !S.box ? tickPanel('loose') : S.box ? boxDetail() : looseArea());
 }
 
@@ -224,7 +303,7 @@ function boxDetail() {
         rd('Sits on', x.sitsOn || 'Nothing'), rd('Kind', x.kind || '—'), rd('Status', x.status === 'retired' ? 'Retired' : 'Active'),
         x.notes && rd('Notes', x.notes)),
       x.status === 'active' && h('div', { class: 'row edit' },
-        h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = S.place; S.tickAdded = []; render(); } }, icon('plus'), 'Add tools'),
+        h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = S.place; S.tickAdded = []; S.tickNew = false; S.tickBrand = c.myTools(rec(), S.place).length ? MY : 'All'; render(); } }, icon('plus'), 'Add tools'),
         h('button', { type: 'button', class: 'key', onclick: () => drawersDialog(x.id) }, 'Add drawers'),
         h('button', { type: 'button', class: 'key', onclick: () => boxDialog(x.id) }, 'Edit box'),
         h('span', { class: 'sp' }),
@@ -257,30 +336,59 @@ function itemList(items, showPath, place) {
 // ---- tick-list (TC-S03, TC-R21, TC-R22) ----
 function tickPanel(place) {
   const r = rec(), where = place === 'loose' ? null : place;
-  const list = tickList(S.tickQ, S.tickBrand, S.tickCons);
+  const mine = S.tickBrand === MY;
+  const list = mine ? [] : tickList(S.tickQ, S.tickBrand, S.tickCons);
   const tierOf = (t) => ({ power: 'Power', hand: 'Hand', consumable: 'Consumable' }[t] || 'Power');
   const rows = list.map((t) => ({ el: () => {
-    const here = where ? c.alreadyIn(r, where, t.name, t.brand) : false;
-    const added = S.tickAdded.find((a) => a.name === t.name && a.brand === t.brand);
+    const here = where && !S.tickNew ? c.alreadyIn(r, where, t.name, t.brand) : false;
+    const added = S.tickAdded.find((a) => !a.mine && a.name === t.name && a.brand === t.brand);
     const box = h('input', { type: 'checkbox', checked: here || !!added, disabled: here && !added, 'aria-label': t.name, onchange: (e) => {
       clearUndo();
-      if (e.target.checked) { const it = c.addItem(r, { name: t.name, brand: t.brand, kind: t.kind, tier: tierOf(t.tier), place: where, source: 'Catalog' }); S.tickAdded.push({ name: t.name, brand: t.brand, uid: it.uid }); commit({ items: [it.uid] }); }
+      if (e.target.checked && S.tickNew) { // TC-R27: its own box, next number
+        const made = c.toolInNewBox(r, t, { kindOfBox: S.tickKob, location: where ? c.locationOf(r, c.parseId(where).container) : '' });
+        S.tickAdded.push({ name: t.name, brand: t.brand, uid: made.items[0].uid, boxId: made.box.id }); commit('all');
+      } else if (e.target.checked) { const it = c.addItem(r, { name: t.name, brand: t.brand, kind: t.kind, tier: tierOf(t.tier), place: where, source: 'Catalog' }); S.tickAdded.push({ name: t.name, brand: t.brand, uid: it.uid }); commit({ items: [it.uid] }); }
+      else if (added?.boxId) { c.removeNewBox(r, added.boxId); S.tickAdded = S.tickAdded.filter((a) => a !== added); commit('all'); } // TC-R28
       else if (added) { r.items = r.items.filter((i) => i.uid !== added.uid); S.tickAdded = S.tickAdded.filter((a) => a !== added); commit('all'); }
       render();
     } });
     return h('label', { class: `irow${added ? ' on' : ''}` }, h('span', { class: 'cb' }, box), h('span', { class: 'nm' }, h('b', {}, t.name), h('small', {}, [t.brand, t.kind].filter(Boolean).join(' · '))),
-      h('span', { class: 'c-brand' }, t.brand || 'No brand'), h('span', { class: 'c-brand' }, t.kind), h('span', {}), h('span', { class: 'c-war' }, h('span', { class: here && !added ? 'st none' : added ? 'st ok' : 'st none' }, here && !added ? 'Already here' : added ? 'Added' : '')));
+      h('span', { class: 'c-brand' }, t.brand || 'No brand'), h('span', { class: 'c-brand' }, t.kind), h('span', {}), h('span', { class: 'c-war' }, h('span', { class: here && !added ? 'st none' : added ? 'st ok' : 'st none' }, here && !added ? 'Already here' : added ? (added.boxId ? `In ${added.boxId}` : 'Added') : '')));
   } }));
+  // TC-R29: tools already recorded, moved in. Ones ticked this visit stay listed so they can be unticked.
+  if (mine) {
+    const ticked = S.tickAdded.filter((a) => a.mine).map((a) => ({ a, it: c.getItem(r, a.uid) })).filter((x) => x.it);
+    const others = c.myTools(r, where, S.tickQ).filter((it) => !ticked.some((x) => x.it.uid === it.uid)).map((it) => ({ a: null, it }));
+    rows.push(...[...ticked, ...others].map(({ a, it }) => ({ el: () => {
+      const box = h('input', { type: 'checkbox', checked: !!a, 'aria-label': it.name, onchange: (e) => {
+        clearUndo();
+        if (e.target.checked && S.tickNew) { const own = c.itemInNewBox(r, it.uid, { kindOfBox: S.tickKob, location: where ? c.locationOf(r, c.parseId(where).container) : '' }); S.tickAdded.push({ mine: true, uid: it.uid, boxId: own.box.id, undo: own.undo }); }
+        else if (e.target.checked) S.tickAdded.push({ mine: true, uid: it.uid, undo: c.moveItems(r, [it.uid], where) });
+        else if (a) { c.undoMove(r, a.undo); if (a.boxId) c.removeNewBox(r, a.boxId); S.tickAdded = S.tickAdded.filter((x) => x !== a); }
+        commit('all'); render();
+      } });
+      const p = c.placeParts(r, it.place, it.looseAt);
+      return h('label', { class: `irow${a ? ' on' : ''}` }, h('span', { class: 'cb' }, box), h('span', { class: 'nm' }, h('b', {}, it.name), h('small', {}, [it.brand, a ? '' : (p.label === 'Loose' ? (it.looseAt || 'Loose') : p.label)].filter(Boolean).join(' · '))),
+        h('span', { class: 'c-brand' }, it.brand || 'No brand'), a ? h('span', { class: 'c-path' }, '') : pathEl(it), h('span', { class: 'c-q' }, it.qty ?? '—'),
+        h('span', { class: 'c-war' }, h('span', { class: a ? 'st ok' : 'st none' }, a ? (a.boxId ? `In ${a.boxId}` : 'Moved here') : '')));
+    } })));
+  }
   const label = where || 'Loose';
+  const made = S.tickAdded.filter((a) => a.boxId), put = S.tickAdded.filter((a) => !a.boxId);
   return h('div', { class: 'panel' },
-    h('div', { class: 'sub' }, h('h3', {}, 'Add tools to ', h('span', { class: 'mono' }, label)), h('span', { class: 'small' }, 'Tick what is there. Each tick adds it now.')),
-    h('div', { class: 'segc', role: 'group', 'aria-label': 'Brand' }, ['All', ...BRANDS, HAND_TOOLS].map((b) => h('button', { type: 'button', 'aria-pressed': String(S.tickBrand === b), onclick: () => { S.tickBrand = b; S.scroll.t = 0; render(); } }, b))),
+    h('div', { class: 'sub' }, h('h3', {}, S.tickNew ? 'Add tools, each in a new box' : ['Add tools to ', h('span', { class: 'mono' }, label)]), h('span', { class: 'small' }, S.tickNew ? `Each tick makes a box with the next number, starting at ${c.nextId(r)}.` : 'Tick what is there. Each tick adds it now.')),
+    h('div', { class: 'row' }, h('span', { class: 'small' }, 'Ticked tools go'),
+      h('div', { class: 'segc', role: 'group', 'aria-label': 'Where ticked tools go' },
+        h('button', { type: 'button', 'aria-pressed': String(!S.tickNew), onclick: () => { S.tickNew = false; render(); } }, where ? `Into ${label}` : 'Loose'),
+        h('button', { type: 'button', 'aria-pressed': String(S.tickNew), onclick: () => { S.tickNew = true; render(); } }, 'Each into a new box')),
+      S.tickNew && h('select', { class: 'pick', 'aria-label': 'Kind of box for new boxes', onchange: (e) => { S.tickKob = e.target.value; } }, r.meta.kinds.map((k) => h('option', { value: k, selected: k === S.tickKob }, `Kind of box ${k}`)))),
+    h('div', { class: 'segc', role: 'group', 'aria-label': 'Brand' }, [MY, 'All', ...BRANDS, HAND_TOOLS].map((b) => h('button', { type: 'button', 'aria-pressed': String(S.tickBrand === b), onclick: () => { S.tickBrand = b; S.scroll.t = 0; render(); } }, b))),
     h('div', { class: 'fbar' },
       searchBox(S.tickQ, 'Search the tick-list', (v) => { S.tickQ = v; S.scroll.t = 0; render(); requestAnimationFrame(() => { const i = $('tickQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'tickQ'),
-      h('label', { class: 'small', style: 'display:inline-flex;gap:5px;align-items:center' }, h('input', { type: 'checkbox', checked: S.tickCons, onchange: (e) => { S.tickCons = e.target.checked; render(); } }), 'Show consumables'),
-      h('span', { class: 'count' }, h('b', {}, c.fmt(list.length)), ' tools')),
-    rows.length ? vlist('t', rows) : h('div', { class: 'empty' }, h('b', {}, `Nothing in the list matches “${S.tickQ}”`), h('span', {}, 'Type it instead.')),
-    h('div', { class: 'row' }, S.tickAdded.length > 0 && h('span', { class: 'st ok' }, `${S.tickAdded.length} added to ${label}`), h('span', { class: 'sp' }),
+      !mine && h('label', { class: 'small', style: 'display:inline-flex;gap:5px;align-items:center' }, h('input', { type: 'checkbox', checked: S.tickCons, onchange: (e) => { S.tickCons = e.target.checked; render(); } }), 'Show consumables'),
+      h('span', { class: 'count' }, h('b', {}, c.fmt(rows.length)), mine ? ' of your tools' : ' tools')),
+    rows.length ? vlist(mine ? 'tm' : 't', rows) : h('div', { class: 'empty' }, h('b', {}, mine ? (S.tickQ ? `None of your tools match “${S.tickQ}”` : 'All your tools are already here') : `Nothing in the list matches “${S.tickQ}”`), h('span', {}, mine ? 'Try the brand lists, or type a tool.' : 'Type it instead.')),
+    h('div', { class: 'row' }, put.length > 0 && h('span', { class: 'st ok' }, [put.filter((a) => a.mine).length && `${put.filter((a) => a.mine).length} moved`, put.filter((a) => !a.mine).length && `${put.filter((a) => !a.mine).length} added`].filter(Boolean).join(', ') + ` to ${label}`), made.length > 0 && h('span', { class: 'st ok' }, made.length === 1 ? `New box ${made[0].boxId}` : `${made.length} new boxes, ${made[0].boxId} to ${made[made.length - 1].boxId}`), h('span', { class: 'sp' }),
       h('button', { type: 'button', class: 'key', onclick: () => itemDialog(null, { place: where, name: S.tickQ }) }, 'Can\'t find it? Type a tool'),
       h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = null; S.tickAdded = []; S.tickQ = ''; render(); } }, 'Done')),
     h('p', { class: 'small', style: 'margin:0' }, `Tool names belong to their makers. Check the name against your tool. List of ${CATALOG_DATE}. Hand tools are listed without a brand.`));
@@ -394,7 +502,7 @@ function recordView() {
       h('button', { type: 'button', class: 'key', onclick: () => download(c.fileName('tool-ctrl-items', 'csv'), c.exportItems(r), 'text/csv') }, 'Export items'),
       h('button', { type: 'button', class: 'key', onclick: exportBackup }, 'Export backup')),
     h('dl', { class: 'read' }, rd('Last backup', h('span', { class: 'mono' }, m.lastBackup || 'Never')), rd('Changes since', h('span', { class: 'mono' }, c.fmt(Math.max(0, since)))),
-      rd('Record', h('span', { class: 'mono' }, `${c.fmt(r.containers.length)} boxes · ${c.fmt(r.compartments.length)} compartments · ${c.fmt(r.items.length)} tools`))));
+      rd('Record', h('span', { class: 'mono' }, `${nOf(r.containers.length, 'box', 'boxes')} · ${nOf(r.compartments.length, 'compartment')} · ${nOf(r.items.length, 'tool')}`))));
   const pe = h('span', { class: 'err' });
   const numbering = h('section', { class: 'tier edit' },
     h('div', { class: 'tier-h' }, h('span', { class: 'n' }, 2), h('h2', {}, 'Numbering'), h('span', { class: 'tier-d' }, 'Prefixes and kinds of box'), h('span', { class: 'tier-s ok' }, `Next ${c.nextId(r)}`)),
@@ -411,9 +519,79 @@ function recordView() {
       h('div', { class: 'fbar' }, m.kinds.map((k) => h('span', { class: 'chip plain' }, k))),
       h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); const v = e.target.k.value.trim(); if (v && !m.kinds.includes(v)) change(() => m.kinds.push(v.slice(0, 28)), {}); } },
         h('input', { class: 'in', name: 'k', placeholder: 'Another kind of box', style: 'flex:1 1 200px;width:auto' }), h('button', { type: 'submit', class: 'key' }, 'Add kind of box'))));
-  const gh = area(3, 'GitHub', 'Your own repo, optional', 'Not in this build', 'idle',
-    h('p', { class: 'small', style: 'margin:0' }, 'Sync with a private GitHub repo of your own comes in a later build. Until then, Export backup moves your record between devices, and Open a backup reads it on a phone.'));
-  return h('div', { class: 'split even' }, h('div', { class: 'stack', style: 'gap:21px' }, ie, numbering), gh);
+  return h('div', { class: 'split even' }, h('div', { class: 'stack', style: 'gap:21px' }, ie, numbering), githubArea());
+}
+
+// ---- GitHub (TC-S07, TC-S08, TC-S09) ----
+function githubArea() {
+  const st = !S.gh ? ['Not connected', 'idle'] : { ok: ['Synced', 'ok'], busy: ['Syncing', 'warn'], conflict: [`${S.conflict?.conflicts.length || 1} to choose`, 'warn'], offline: ['Offline', 'warn'], error: [S.syncErr?.kind === 'auth' ? 'Token refused' : 'Needs you', 'bad'], off: ['Connected', 'ok'] }[S.syncState] || ['Connected', 'ok'];
+  const body = [];
+  if (!S.gh || S.syncErr?.kind === 'auth') {
+    const auth = !!S.gh;
+    const f = h('form', { class: 'stack', onsubmit: (e) => { e.preventDefault(); connect(auth ? S.gh.repo : e.target.repo.value, e.target.token.value); } },
+      !auth && h('p', { class: 'small', style: 'margin:0' }, 'Keep your record in a private repo of your own, to sync it between devices and keep a history of every change. Make the repo private on GitHub, then a fine-grained token for that one repo.'),
+      auth ? h('div', { class: 'health bad' }, h('b', {}, 'GitHub refused the token'), h('span', {}, `${S.syncErr.text.replace(/^GitHub refused the token\. /, '')} ${(() => { const n = waiting(S.sync?.base, rec()); return n ? `${nOf(n, 'change')} ${n === 1 ? 'is' : 'are'} waiting on this device; nothing is lost.` : ''; })()}`))
+        : h('label', { class: 'f' }, h('span', {}, 'Repo · owner/name'), h('input', { class: 'in m', name: 'repo', autocomplete: 'off', spellcheck: 'false', placeholder: 'owner/tool-record', value: loadConn()?.repo || '' })),
+      h('label', { class: 'f' }, h('span', {}, S.phone ? 'Token · Contents read only is enough here' : 'Token · Contents read and write, this repo only'), h('input', { class: `in m${auth ? ' bad' : ''}`, name: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false' })),
+      S.ghNote && h('div', { class: 'health bad' }, h('b', {}, 'Not connected'), h('span', {}, S.ghNote)),
+      h('div', { class: 'row' }, h('button', { type: 'submit', class: auth ? 'key go' : 'key connect', disabled: S.connecting }, S.connecting ? 'Connecting…' : auth ? 'Save token and sync' : 'Connect'),
+        h('a', { class: 'key', href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener noreferrer' }, 'Make a token on GitHub ↗'),
+        auth && h('button', { type: 'button', class: 'key stop', onclick: disconnect }, 'Disconnect')),
+      h('div', { class: 'health' }, h('b', {}, 'The token stays here'), h('span', {}, 'It is kept on this device only. It never goes in a link, an export, a backup or the repo.')));
+    body.push(f);
+  }
+  if (S.choice) {
+    const r = rec(), rr = S.choice.remote;
+    body.push(h('div', { class: 'panel' }, h('h3', {}, `${S.gh.repo} already holds a record`),
+      h('p', { class: 'small', style: 'margin:0' }, `GitHub has ${nOf(rr.containers.length, 'box', 'boxes')} and ${nOf(rr.items.length, 'tool')}. This device has ${nOf(r.containers.length, 'box', 'boxes')} and ${nOf(r.items.length, 'tool')}. Which one should both keep?`),
+      h('div', { class: 'row' },
+        h('button', { type: 'button', class: 'key go', onclick: async () => { const ch = S.choice; S.choice = null; await applySync({ status: 'synced', record: ch.remote, base: ch.remote, sha: ch.sha }, null); } }, 'Use GitHub\'s record'),
+        h('button', { type: 'button', class: 'key', onclick: async () => {
+          if (!confirm(`Replace the record on GitHub with this device's? GitHub keeps the old one in its history.`)) return;
+          const ch = S.choice; S.choice = null;
+          const w = await client(S.gh.repo, S.gh.token).writeRecord(rec(), ch.sha, 'Tool Ctrl: replaced from this device'); // a plain write over GitHub's copy
+          if (w.error) { S.syncErr = w.error; S.syncState = 'error'; render(); return; }
+          await applySync({ status: 'synced', record: rec(), base: rec(), sha: w.sha, message: 'Tool Ctrl: replaced from this device' }, null);
+        } }, 'Use this device\'s'),
+        h('button', { type: 'button', class: 'key', onclick: disconnect }, 'Cancel'))));
+  }
+  if (S.conflict) {
+    const cf = S.conflict;
+    body.push(h('div', { class: 'stack' },
+      h('div', { class: 'health warn' }, h('b', {}, `${nOf(cf.conflicts.length, 'change')} made on two devices`), h('span', {}, 'The same field changed here and on another device since the last sync. Choose which to keep; everything else is already merged.')),
+      cf.conflicts.map((x, i) => h('div', { class: 'panel' },
+        h('div', { class: 'sub' }, h('h3', { class: x.kind === 'items' ? '' : 'mono' }, x.label), h('span', { class: 'small' }, x.field)),
+        h('div', { class: 'row', style: 'align-items:stretch' },
+          h('div', { class: 'stack', style: 'flex:1 1 200px;gap:8px' }, h('span', { class: 'micro' }, 'This device'), h('span', { class: 'mono', style: 'font-size:var(--t-cap);overflow-wrap:anywhere' }, show(x.local)),
+            h('button', { type: 'button', class: 'key', onclick: () => resolve(i, 'local') }, 'Keep this device\'s')),
+          h('div', { class: 'stack', style: 'flex:1 1 200px;gap:8px' }, h('span', { class: 'micro' }, 'GitHub'), h('span', { class: 'mono', style: 'font-size:var(--t-cap);overflow-wrap:anywhere' }, show(x.remote)),
+            h('button', { type: 'button', class: 'key', onclick: () => resolve(i, 'remote') }, 'Keep GitHub\'s')))))));
+  }
+  if (S.gh && !S.choice) {
+    const n = waiting(S.sync?.base, rec());
+    body.push(
+      S.sync?.private === false && h('div', { class: 'health warn' }, h('b', {}, 'This repo is public'), h('span', {}, 'Anyone can see your record, serial numbers and where tools are kept. Make it private on GitHub.')),
+      S.renamedNote && h('div', { class: 'health warn' }, h('b', {}, 'A box number changed'), h('span', {}, S.renamedNote), h('button', { type: 'button', class: 'key', onclick: () => { S.renamedNote = ''; render(); } }, 'OK')),
+      S.syncErr && S.syncErr.kind !== 'auth' && h('div', { class: `health ${S.syncErr.kind === 'offline' ? 'warn' : 'bad'}` }, h('b', {}, S.syncErr.kind === 'offline' ? 'Offline' : 'Not synced'), h('span', {}, S.syncErr.text)),
+      h('dl', { class: 'read' }, rd('Repo', h('span', { class: 'mono' }, S.gh.repo)), rd('Visibility', S.sync?.private === false ? 'Public' : S.sync?.private ? 'Private' : 'Checking'),
+        rd('Last sync', h('span', { class: 'mono' }, S.sync?.lastSync ? new Date(S.sync.lastSync).toLocaleString() : 'Not yet')), rd('Last commit', h('span', { class: 'mono' }, S.sync?.lastMsg || '—')),
+        rd('Waiting', h('span', { class: 'mono' }, S.phone ? 'Read only' : c.fmt(n))), rd('This device', S.phone ? 'Phone · reads only' : 'Computer or iPad')),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'key', disabled: S.syncState === 'busy', onclick: syncNow }, 'Sync now'), h('span', { class: 'sp' }),
+        h('button', { type: 'button', class: 'key stop', onclick: () => { if (confirm('Disconnect from GitHub on this device? The token is deleted from this device. The record stays here and on GitHub.')) disconnect(); } }, 'Disconnect')),
+      h('p', { class: 'small', style: 'margin:0' }, 'History lives in the repo\'s commits on GitHub, one per sync.'));
+  }
+  return area(3, 'GitHub', 'Your own repo, optional', st[0], st[1], ...body);
+}
+const show = (v) => (v == null || v === '' ? '(empty)' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+async function resolve(i, keep) {
+  const cf = S.conflict;
+  c.resolveConflict(cf.merged, cf.conflicts[i], keep);
+  cf.conflicts.splice(i, 1);
+  if (cf.conflicts.length) { render(); return; }
+  S.conflict = null; S.syncState = 'busy'; leds();
+  S.rec = cf.merged; all = true; await flush();
+  S.sync = { ...S.sync, base: cf.remote, sha: cf.remoteSha };
+  syncNow();
 }
 
 async function openFile(f, before) {
@@ -633,5 +811,8 @@ mq.addEventListener('change', () => { S.phone = mq.matches; S.sel.clear(); S.tic
 (async () => {
   try { S.rec = await loadRecord(); } catch { S.saveFailed = true; }
   S.low = (await storageUse()) > 0.9;
+  S.gh = loadConn();
+  if (S.gh) { try { S.sync = await loadSync(); } catch { S.sync = null; } }
   render();
+  if (S.gh && S.rec) syncNow(); // TC-R65: sync when the app opens
 })();

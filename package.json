@@ -2,5 +2,5 @@
   "name": "tool-ctrl",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test test/core.test.mjs" }
+  "scripts": { "test": "node --test test/core.test.mjs test/sync.test.mjs" }
 }

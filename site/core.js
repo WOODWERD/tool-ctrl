@@ -130,7 +130,9 @@ export function retireContainer(rec, cid, moveItemsTo = null, today = isoToday()
 }
 
 // ---------- items (TC-R20 to TC-R26) ----------
-export function newUid(rec) { rec.meta.itemSeq += 1; return 'i' + rec.meta.itemSeq.toString(36); }
+// A short random tail keeps two devices adding tools offline from picking the same ID (TC-R66)
+const tail = () => { const a = new Uint8Array(3); globalThis.crypto.getRandomValues(a); return [...a].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 4); };
+export function newUid(rec) { rec.meta.itemSeq += 1; return 'i' + rec.meta.itemSeq.toString(36) + tail(); }
 export function addItem(rec, f = {}) {
   const tier = TIERS.includes(f.tier) ? f.tier : 'Power';
   const it = {
@@ -175,6 +177,38 @@ export function splitOne(rec, uid) {
   const one = addItem(rec, { ...it, qty: 1, warranty: null, source: it.source });
   one.history = []; one.place = it.place;
   return one;
+}
+
+// TC-R27: a catalog tool in a box of its own, with the next free number
+const TIER_OF = { power: 'Power', hand: 'Hand', consumable: 'Consumable' };
+export function toolInNewBox(rec, t, { kindOfBox = 'Systainer', location = '' } = {}) {
+  const box = addContainer(rec, { name: t.name.toUpperCase(), kind: t.kind, kindOfBox, location });
+  const tier = TIER_OF[t.tier] || 'Power';
+  const items = [addItem(rec, { name: t.name, brand: t.brand, kind: t.kind, tier, place: box.id, source: 'Catalog' }),
+    ...[t.c1, t.c2].filter(Boolean).map((line) => addItem(rec, { name: line, tier, place: box.id, source: 'Catalog' }))];
+  return { box, items };
+}
+// TC-R29: tools already recorded that could move here, Loose first
+export function myTools(rec, place, q = '') {
+  const w = words(q);
+  return rec.items.filter((i) => i.status === 'active' && i.place !== (place || null) && w.every((x) => `${i.name} ${i.brand} ${i.kind}`.toLowerCase().includes(x)))
+    .sort((a, b) => (!!a.place - !!b.place) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+// TC-R29 with TC-R27: a recorded tool moved into a box of its own
+export function itemInNewBox(rec, uid, { kindOfBox = 'Systainer', location = '' } = {}, date = isoToday()) {
+  const it = getItem(rec, uid);
+  const box = addContainer(rec, { name: it.name.toUpperCase(), kind: it.kind, kindOfBox, location });
+  const undo = moveItems(rec, [uid], box.id, date);
+  return { box, undo };
+}
+
+// TC-R28: take back a box made moments ago, and its number if it was the highest
+export function removeNewBox(rec, id) {
+  const p = parseId(id);
+  rec.items = rec.items.filter((i) => !(i.place === id || rec.compartments.some((k) => k.containerId === id && k.id === i.place)));
+  rec.compartments = rec.compartments.filter((k) => k.containerId !== id);
+  rec.containers = rec.containers.filter((c) => c.id !== id);
+  if (p && rec.meta.counters[p.prefix] === p.n) rec.meta.counters[p.prefix] = Math.max(0, ...rec.containers.filter((c) => c.prefix === p.prefix).map((c) => c.n));
 }
 
 // TC-R35: a suggestion or tick for something already in that place
@@ -422,6 +456,102 @@ export function readBackup(text) {
   const r = o.record;
   r.compartments ||= []; r.meta = { ...emptyRecord().meta, ...r.meta };
   return { record: r };
+}
+
+// ---------- sync (TC-R65, TC-R66) ----------
+const KINDS = [['containers', 'id'], ['compartments', 'id'], ['items', 'uid']];
+const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((y) => [y, x[y]])) : x));
+export const same = (a, b) => stable(a) === stable(b);
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const byKey = (list, key) => new Map((list || []).map((x) => [x[key], x]));
+
+// What changed between two copies of the record, for the commit message and the waiting count
+export function diffRecords(base, cur) {
+  const d = { added: {}, changed: {}, removed: {}, boxes: new Set(), total: 0 };
+  for (const [kind, key] of KINDS) {
+    const B = byKey(base?.[kind], key), C = byKey(cur?.[kind], key);
+    d.added[kind] = 0; d.changed[kind] = 0; d.removed[kind] = 0;
+    const touch = (x) => { if (!x) return; const box = kind === 'containers' ? x.id : kind === 'compartments' ? x.containerId : (x.place ? parseId(x.place)?.container : ''); if (box) d.boxes.add(box); };
+    for (const [k, x] of C) { if (!B.has(k)) { d.added[kind]++; touch(x); } else if (!same(B.get(k), x)) { d.changed[kind]++; touch(x); touch(B.get(k)); } }
+    for (const [k, x] of B) if (!C.has(k)) { d.removed[kind]++; touch(x); }
+  }
+  d.total = KINDS.reduce((n, [k]) => n + d.added[k] + d.changed[k] + d.removed[k], 0) + (base && !same(base.meta, cur.meta) && !KINDS.some(([k]) => d.added[k] || d.changed[k] || d.removed[k]) ? 1 : 0);
+  return d;
+}
+// TC-R65: one commit per sync, with a message such as "WW-067: 3 tools added"
+export function commitMessage(base, cur) {
+  const d = diffRecords(base, cur);
+  const word = { containers: ['box', 'boxes'], compartments: ['compartment', 'compartments'], items: ['tool', 'tools'] };
+  const parts = [];
+  for (const [kind] of KINDS) for (const [what, verb] of [['added', 'added'], ['changed', 'changed'], ['removed', 'removed']]) {
+    const n = d[what][kind]; if (n) parts.push(`${n} ${word[kind][n === 1 ? 0 : 1]} ${verb}`);
+  }
+  if (!parts.length) return 'Tool Ctrl: settings changed';
+  const boxes = [...d.boxes];
+  return (boxes.length === 1 ? `${boxes[0]}: ` : boxes.length > 1 ? `${boxes.length} boxes: ` : '') + parts.join(', ');
+}
+
+// TC-R66: three-way merge, field by field. Where both sides changed the same field, the local value stays
+// for now and the field is listed in conflicts for the person to choose (TC-S08).
+export function mergeRecords(base, local, remote) {
+  base = base || { meta: {}, containers: [], compartments: [], items: [] };
+  local = clone(local);
+  const renamed = [];
+  // Two devices each added a box with the same new number: the local one takes the next free number
+  const Bc = byKey(base.containers, 'id'), Rc = byKey(remote.containers, 'id');
+  const hi = (p) => Math.max(nextNumber(local, p), nextNumber(remote, p)) ;
+  for (const x of [...local.containers]) {
+    if (!Bc.has(x.id) && Rc.has(x.id) && !same(x, Rc.get(x.id))) {
+      const was = x.id, to = formatId(x.prefix, hi(x.prefix));
+      renameContainer(local, was, to); renamed.push([was, to]);
+    }
+  }
+  // Same for a compartment added on both sides with the same number
+  const Bk = byKey(base.compartments, 'id'), Rk = byKey(remote.compartments, 'id');
+  for (const k of [...local.compartments]) {
+    if (!Bk.has(k.id) && Rk.has(k.id) && !same(k, Rk.get(k.id))) {
+      const c = getC(local, k.containerId), rc = getC(remote, k.containerId);
+      const n = Math.max(c?.cmax?.[k.type] || 0, rc?.cmax?.[k.type] || 0) + 1;
+      const was = k.id; k.n = n; k.id = compId(k.containerId, k.type, n); if (c) c.cmax[k.type] = n;
+      for (const it of local.items) if (it.place === was) it.place = k.id;
+      renamed.push([was, k.id]);
+    }
+  }
+  const conflicts = [];
+  const out = { meta: {}, containers: [], compartments: [], items: [] };
+  for (const [kind, key] of KINDS) {
+    const B = byKey(base[kind], key), L = byKey(local[kind], key), R = byKey(remote[kind], key);
+    for (const k of new Set([...L.keys(), ...R.keys()])) {
+      const b = B.get(k), l = L.get(k), r = R.get(k);
+      if (l && !r) { if (!b || !same(l, b)) out[kind].push(l); continue; } // remote removed it: keep only if changed here
+      if (r && !l) { if (!b || !same(r, b)) out[kind].push(r); continue; }
+      if (same(l, r) || same(r, b)) { out[kind].push(l); continue; }
+      if (same(l, b)) { out[kind].push(r); continue; }
+      const m = {};
+      for (const f of new Set([...Object.keys(l), ...Object.keys(r)])) {
+        const lv = l[f], rv = r[f], bv = b?.[f];
+        if (same(lv, rv) || same(rv, bv)) m[f] = lv;
+        else if (same(lv, bv)) m[f] = rv;
+        else if (f === 'history') { const seen = new Set(); m[f] = [...(bv || []), ...lv, ...rv].filter((h) => { const s = stable(h); if (seen.has(s)) return false; seen.add(s); return true; }); }
+        else if (f === 'cmax') m[f] = Object.fromEntries(Object.keys({ ...lv, ...rv }).map((t) => [t, Math.max(lv?.[t] || 0, rv?.[t] || 0)]));
+        else { m[f] = lv; conflicts.push({ kind, key: k, field: f, local: lv, remote: rv, label: kind === 'items' ? l.name : k }); }
+      }
+      out[kind].push(m);
+    }
+  }
+  const lm = local.meta, rm = remote.meta, bm = base.meta || {};
+  const pick = (f) => (same(lm[f], bm[f]) ? rm[f] : lm[f]);
+  const counters = {};
+  for (const p of new Set([...Object.keys(lm.counters || {}), ...Object.keys(rm.counters || {})])) counters[p] = Math.max(lm.counters?.[p] || 0, rm.counters?.[p] || 0);
+  out.meta = { ...rm, ...lm, owner: pick('owner'), prefix: pick('prefix'), counters, itemSeq: Math.max(lm.itemSeq || 0, rm.itemSeq || 0),
+    prefixes: [...new Set([...(rm.prefixes || []), ...(lm.prefixes || [])])], kinds: [...new Set([...(rm.kinds || []), ...(lm.kinds || [])])] };
+  return { record: out, conflicts, renamed };
+}
+// TC-S08: apply the person's choice for one conflicting field
+export function resolveConflict(rec, cf, keep) {
+  const key = cf.kind === 'items' ? 'uid' : 'id';
+  const x = rec[cf.kind].find((y) => y[key] === cf.key);
+  if (x) x[cf.field] = clone(keep === 'remote' ? cf.remote : cf.local) ?? null;
 }
 
 // ---------- counts ----------
