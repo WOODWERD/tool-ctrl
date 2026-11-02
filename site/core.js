@@ -491,6 +491,92 @@ export function exportItems(rec) {
 }
 export const fileName = (stem, ext, d = new Date()) => `${stem}-${isoToday(d)}.${ext}`;
 
+// ---------- a maker's warranty list (TC-R110 to TC-R120) ----------
+// One row per maker export. Only the mapped columns are read; every other column is ignored (TC-R111).
+export const WARRANTY_MAKERS = [
+  { brand: 'Festool', label: 'Festool MyToolbox', date: 'mdy', endings: ['US', 'USA', '120V'],
+    cols: { part: 'part no.', serial: 'serial no.', nickname: 'nickname', product: 'product', bought: 'purchasing date', end: 'warranty until', regNo: 'warranty number' } },
+];
+const DATE_TEXT = { mdy: 'month/day/year' };
+const looseKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// The maker whose header row this is, in any column order and any case
+export function warrantyMaker(text) {
+  const head = (parseCsv(text)[0] || []).map((h) => h.trim().toLowerCase());
+  return WARRANTY_MAKERS.find((m) => Object.values(m.cols).every((x) => head.includes(x))) || null;
+}
+// TC-R117: read in the maker's format only, never guessed row by row
+export function warrantyDate(s, fmt) {
+  s = String(s || '').trim();
+  if (!s) return '';
+  const m = fmt === 'mdy' && /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(+m[3], +m[1] - 1, +m[2]);
+  return d.getMonth() === +m[1] - 1 && d.getDate() === +m[2] ? isoToday(d) : null;
+}
+// TC-R114: drop the maker's region and power endings, such as CSC SYS 50 US
+export function warrantyName(s, maker) {
+  const end = new RegExp(`(\\s+(${maker.endings.join('|')}))+\\s*$`, 'i');
+  return String(s || '').trim().replace(end, '').trim();
+}
+
+// Reads a warranty list into a plan; nothing changes until applyWarranty. catalog is the tick-list's list.
+export function planWarranty(rec, text, catalog = []) {
+  const maker = warrantyMaker(text);
+  if (!maker) return { error: 'This isn\'t a warranty list Tool Ctrl knows yet. It reads Festool MyToolbox exports.' };
+  const rows = parseCsv(text), head = rows[0].map((h) => h.trim().toLowerCase());
+  const known = new Map(catalog.filter((t) => t.brand === maker.brand).map((t) => [looseKey(t.name), t]));
+  const bySerial = new Map();
+  for (const it of rec.items) if (it.warranty?.serial) bySerial.set(it.warranty.serial.trim().toLowerCase(), it);
+  const plan = { maker: maker.brand, label: maker.label, rows: 0, add: [], here: [], skipped: [], noDates: 0 };
+  const seen = new Set();
+  rows.slice(1).forEach((r, i) => {
+    const get = (k) => (r[head.indexOf(maker.cols[k])] ?? '').trim();
+    if (r.every((x) => !String(x).trim())) return;
+    plan.rows += 1;
+    const line = i + 2, product = get('product');
+    if (!product) { plan.skipped.push({ line, why: 'No product name' }); return; }
+    const bought = warrantyDate(get('bought'), maker.date), end = warrantyDate(get('end'), maker.date);
+    if (bought === null || end === null) { plan.skipped.push({ line, why: `${product}: a date isn't ${DATE_TEXT[maker.date]}` }); return; }
+    const warranty = { serial: get('serial'), bought, end, regNo: get('regNo'), registered: 'yes' };
+    const key = warranty.serial.toLowerCase();
+    // TC-R116: a serial already in the record, active or retired, isn't added again
+    if (key && (bySerial.has(key) || seen.has(key))) {
+      const it = bySerial.get(key);
+      const fills = {};
+      if (it?.warranty) for (const k of ['bought', 'end', 'regNo', 'registered']) if (!it.warranty[k] && warranty[k]) fills[k] = warranty[k];
+      plan.here.push({ line, name: it ? it.name : product, uid: it?.uid || null, fills });
+      return;
+    }
+    if (key) seen.add(key);
+    if (!bought && !end) plan.noDates += 1;
+    const name = warrantyName(product, maker), t = known.get(looseKey(name));
+    const notes = [get('part') && `${maker.brand} part no. ${get('part')}`, get('nickname')].filter(Boolean).join(' · ');
+    plan.add.push({ line, name: t ? t.name : name, kind: t ? t.kind : '', tier: t ? ({ power: 'Power', hand: 'Hand' }[t.tier] || 'Power') : 'Power',
+      matched: !!t, brand: maker.brand, notes, warranty });
+  });
+  plan.matched = plan.add.filter((a) => a.matched).length;
+  plan.fills = plan.here.filter((h) => h.uid && Object.keys(h.fills).length).length;
+  return plan;
+}
+// TC-R113, TC-R115: one item per row, quantity 1, Loose unless a place is given. Returns what Undo needs (TC-R118).
+export function applyWarranty(rec, plan, place = null) {
+  const added = plan.add.map((a) => addItem(rec, { name: a.name, brand: a.brand, kind: a.kind, tier: a.tier, qty: 1, place, notes: a.notes, source: 'Import', warranty: { ...a.warranty } }).uid);
+  const filled = [];
+  for (const h of plan.here) {
+    const it = h.uid && getItem(rec, h.uid);
+    if (!it?.warranty || !Object.keys(h.fills).length) continue;
+    filled.push({ uid: it.uid, before: { ...it.warranty } });
+    Object.assign(it.warranty, h.fills);
+  }
+  return { added, filled };
+}
+export function undoWarranty(rec, u) {
+  const gone = new Set(u.added);
+  rec.items = rec.items.filter((i) => !gone.has(i.uid));
+  for (const f of u.filled) { const it = getItem(rec, f.uid); if (it) it.warranty = f.before; }
+}
+
 // TC-R54: the backup holds everything. It never holds a token (TC-R62).
 export const BACKUP_KIND = 'tool-ctrl-record';
 export const writeBackup = (rec, d = new Date()) => JSON.stringify({ kind: BACKUP_KIND, version: 1, saved: d.toISOString(), record: rec });

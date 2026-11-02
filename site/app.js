@@ -1,6 +1,6 @@
 // Tool Ctrl page. Rules live in core.js; this file draws them and handles input.
 import * as c from './core.js';
-import { tickList, BRANDS, HAND_TOOLS, CATALOG_DATE } from './catalog.js';
+import { tickList, BRANDS, HAND_TOOLS, CATALOG_DATE, CATALOG } from './catalog.js';
 const MY = 'My tools';
 import { loadRecord, saveRecord, storageUse, askToKeep, loadSync, saveSync } from './store.js';
 import { client, repoError } from './github.js';
@@ -548,13 +548,16 @@ function recordView() {
   const fileIn = h('input', { type: 'file', id: 'importFile', accept: S.phone ? '.json,application/json' : '.csv,.json,.xlsx,text/csv,application/json', hidden: true, onchange: (e) => { openFile(e.target.files[0]); e.target.value = ''; } });
   const drop = h('div', { class: 'drop edit', ondragover: (e) => { e.preventDefault(); drop.classList.add('over'); }, ondragleave: () => drop.classList.remove('over'),
     ondrop: (e) => { e.preventDefault(); drop.classList.remove('over'); openFile(e.dataTransfer.files[0]); } },
-    h('span', {}, 'Drop a spreadsheet (.csv) or a backup (.json) here. It opens on this device; nothing is uploaded.'), h('button', { type: 'button', class: 'key', onclick: () => fileIn.click() }, 'Choose file'));
+    h('span', {}, 'Drop a spreadsheet (.csv) or a backup (.json) here. It opens on this device; nothing is uploaded.'), h('button', { type: 'button', class: 'key', onclick: () => { S.wantWarranty = false; fileIn.click(); } }, 'Choose file'));
   const since = m.changes - (m.backupAt || 0);
   const ie = area(1, S.phone ? 'Backup' : 'Import and export', S.phone ? 'Open a backup saved on a computer or iPad' : 'Bring a list in, send labels to Box Ctrl',
-    S.plan ? 'Waiting for you' : S.over ? `${S.over.length} boxes ran over` : m.lastBackup ? `Backed up ${m.lastBackup}` : 'Not backed up', S.plan || S.over || !m.lastBackup ? 'warn' : 'ok',
+    S.plan || S.wplan ? 'Waiting for you' : S.over ? `${S.over.length} boxes ran over` : m.lastBackup ? `Backed up ${m.lastBackup}` : 'Not backed up', S.plan || S.wplan || S.over || !m.lastBackup ? 'warn' : 'ok',
     S.note && h('div', { class: 'health bad' }, h('b', {}, 'That file didn\'t open'), h('span', {}, S.note)),
-    S.plan && planPanel(), S.over && overPanel(),
+    S.plan && planPanel(), S.wplan && warrantyPanel(), S.over && overPanel(),
     fileIn, drop,
+    h('div', { class: 'row edit' },
+      h('button', { type: 'button', class: 'key', onclick: () => { S.wantWarranty = true; fileIn.click(); } }, 'Import warranty list'),
+      h('span', { class: 'small' }, 'A maker\'s warranty export, such as Festool MyToolbox. See the guide for where to find it.')),
     S.phone && h('div', { class: 'row' }, h('button', { type: 'button', class: 'key', onclick: () => fileIn.click() }, 'Open a backup'), h('span', { class: 'small' }, 'Replaces what this phone shows. Nothing is sent anywhere.')),
     h('div', { class: 'row edit' },
       h('button', { type: 'button', class: 'key', onclick: exportForBox }, 'Export for Box Ctrl'),
@@ -657,8 +660,9 @@ async function resolve(i, keep) {
 }
 
 async function openFile(f, before) {
+  const wantWarranty = S.wantWarranty; S.wantWarranty = false;
   if (!f) return;
-  S.note = ''; S.plan = null; S.over = null;
+  S.note = ''; S.plan = null; S.wplan = null; S.over = null;
   if (/\.xlsx?$/i.test(f.name)) { S.note = `${f.name} is an Excel file. Save it as .csv from Excel, Numbers or Google Sheets, then open that.`; S.view = 'record'; render(); return; }
   if (f.size > 20 * 1024 * 1024) { S.note = `${f.name} is over 20 MB.`; render(); return; }
   const text = await readFile(f);
@@ -671,6 +675,12 @@ async function openFile(f, before) {
   }
   if (S.phone) { S.note = 'A phone opens backups only. Import lists on a computer or iPad.'; render(); return; }
   if (before) before();
+  // TC-R111: a maker's warranty export is known by its header row, from either button
+  if (wantWarranty || c.warrantyMaker(text)) {
+    const wp = c.planWarranty(rec(), text, CATALOG);
+    if (wp.error) S.note = wp.error; else { S.wplan = wp; S.planFile = f.name; }
+    S.view = 'record'; render(); return;
+  }
   S.planFile = f.name; S.planText = text;
   const ids = c.parseCsv(text).slice(1).map((row) => c.parseId(row[0] || '')).filter(Boolean);
   S.renumber = ids.some((p) => p.prefix !== rec().meta.prefix);
@@ -697,6 +707,32 @@ function planPanel() {
       change(() => { c.applyImport(rec(), plan); all = true; }, 'all'); S.view = 'boxes';
       render();
     } }, `Add ${c.fmt(p.boxes.length)} boxes`), h('button', { type: 'button', class: 'key', onclick: () => { S.plan = null; render(); } }, 'Cancel')));
+}
+// ---- Warranty list import (TC-S15) ----
+function warrantyPanel() {
+  const p = S.wplan, adds = p.add.length;
+  const crow = (k, text, n) => h('div', { class: 'crow', style: 'cursor:default' }, h('span', { class: 'cid' }, k), h('span', {}, text), h('span', { class: 'cn' }, c.fmt(n)));
+  const some = (list) => list.slice(0, 3).join(' · ') + (list.length > 3 ? ` and ${list.length - 3} more` : '');
+  const matched = p.add.filter((a) => a.matched).map((a) => a.name), unmatched = [...new Set(p.add.filter((a) => !a.matched).map((a) => a.name))];
+  const go = adds ? `Add ${c.fmt(adds)} ${adds === 1 ? 'tool' : 'tools'}` : p.fills ? `Fill details on ${c.fmt(p.fills)} ${p.fills === 1 ? 'tool' : 'tools'}` : 'Nothing to add';
+  return h('div', { class: 'panel' },
+    h('div', { class: `health ${p.skipped.length ? 'warn' : 'ok'}` }, h('b', {}, `${p.maker} warranty list read`),
+      h('span', {}, `${c.fmt(p.rows)} ${p.rows === 1 ? 'tool' : 'tools'} from `, h('span', { class: 'mono' }, S.planFile), '. Only serials, dates, warranty numbers, part numbers and product names are read.')),
+    h('div', { class: 'list' },
+      crow('New', adds ? 'Not in this record yet' : 'Every tool is already here', adds),
+      matched.length > 0 && crow('Matched', `${some(matched)}. Name, kind and tier from the catalog`, matched.length),
+      unmatched.length > 0 && crow('Not matched', `${some(unmatched)}. Kept by the file's name, tier Power`, adds - matched.length),
+      p.noDates > 0 && crow('No dates', `${p.noDates === 1 ? 'One tool has' : `${p.noDates} tools have`} no purchase date or warranty end. They come in with those left empty`, p.noDates),
+      crow('Already here', p.fills ? `Matched by serial number. Empty warranty details fill in on ${c.fmt(p.fills)}; nothing typed is changed` : 'Matched by serial number', p.here.length),
+      crow('Skipped', p.skipped.length ? 'Listed below' : 'Nothing skipped', p.skipped.length)),
+    p.skipped.length > 0 && h('ul', { class: 'hist' }, p.skipped.slice(0, 12).map((s) => h('li', {}, `Row ${s.line}: ${s.why}`)), p.skipped.length > 12 && h('li', {}, `and ${p.skipped.length - 12} more`)),
+    adds > 0 && h('p', { class: 'small', style: 'margin:0' }, `Each comes in as ${p.maker}, quantity 1, registered, with its serial, purchase date, warranty end and warranty number. The part number goes in notes. They go to Loose. Tick them into boxes from My tools.`),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'key go', disabled: !adds && !p.fills, onclick: () => {
+      const plan = S.wplan; S.wplan = null; let u;
+      change(() => { u = c.applyWarranty(rec(), plan); all = true; }, 'all');
+      offerUndo(`Added ${c.fmt(u.added.length)} ${u.added.length === 1 ? 'tool' : 'tools'} from the warranty list`, () => { c.undoWarranty(rec(), u); all = true; });
+      render();
+    } }, go), h('button', { type: 'button', class: 'key', onclick: () => { S.wplan = null; render(); } }, 'Cancel')));
 }
 function exportForBox() {
   const ex = c.exportBoxCtrl(rec(), { compartments: S.drawerRows });

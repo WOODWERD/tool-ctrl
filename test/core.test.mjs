@@ -1,9 +1,9 @@
-// Run: npm test. Set TC_SYSTAINERS to a real Systainer list to run TC-A01 against it as well.
+// Run: npm test. Set TC_SYSTAINERS to a real Systainer list, or TC_FESTOOL to a real Festool warranty export, to check those too.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as c from '../site/core.js';
-import { tickList, HAND_TOOLS } from '../site/catalog.js';
+import { tickList, HAND_TOOLS, CATALOG } from '../site/catalog.js';
 
 // A made-up list in the Systainer list's shape. No one's real equipment (TC-R70).
 const SAMPLE = `id,name,kind,contents,tier,palette,icon,model,systainer,location,label_status,notes
@@ -314,4 +314,115 @@ test('TC-R85 the warranty card has what a claim needs', () => {
   const it = c.addItem(r, { name: 'TS 55 F', kind: 'Track saw', brand: 'Festool', place: ch.id, warranty: { serial: 'SN1', bought: '2026-03-01', years: 3, registered: 'yes' } });
   const t = c.warrantyCard(r, it);
   for (const s of ['SN1', '2029-03-01', 'Registered: Yes', 'Shop wall › WW-001 › TS 55 F']) assert.ok(t.includes(s), s);
+});
+
+// ---------- a maker's warranty list (TC-R110 to TC-R120) ----------
+// A made-up export in the Festool MyToolbox shape. Serials and numbers are fake (TC-R70).
+// Set TC_FESTOOL to a real export to run TC-A34 to TC-A37 against it as well; the export never goes in this repo.
+const FESTOOL_LIST = `Part no.,Serial no.,Nickname,Product,Purchasing date,Warranty until,Warranty number,Category
+100001,SN-0001,,TS 55 F USA,3/4/2025,3/4/2028,W-0001,Saws
+100002,SN-0002,Bench saw,SAMPLE SAW US 120V,,,W-0002,
+100003,SN-0003,,"SAMPLE PACK 5,0 ASI",12/26/2020,12/26/2023,W-0003,Cordless products
+100003,SN-0004,,"SAMPLE PACK 5,0 ASI",12/26/2020,12/26/2023,W-0004,Cordless products`;
+
+test('TC-A34 a warranty list comes in Loose, one item per row, with its warranty details', () => {
+  const r = fresh();
+  const plan = c.planWarranty(r, FESTOOL_LIST, CATALOG);
+  assert.equal(plan.maker, 'Festool'); assert.equal(plan.add.length, 4); assert.equal(plan.skipped.length, 0);
+  c.applyWarranty(r, plan);
+  assert.equal(r.items.length, 4);
+  for (const it of r.items) {
+    assert.equal(it.brand, 'Festool'); assert.equal(it.qty, 1); assert.equal(it.place, null);
+    assert.equal(it.source, 'Import'); assert.equal(it.warranty.registered, 'yes');
+  }
+  const saw = r.items.find((i) => i.warranty.serial === 'SN-0001');
+  assert.deepEqual([saw.warranty.bought, saw.warranty.end, saw.warranty.regNo], ['2025-03-04', '2028-03-04', 'W-0001']);
+  assert.equal(c.warrantyEnd(saw.warranty), '2028-03-04');
+  assert.equal(saw.notes, 'Festool part no. 100001');
+  assert.equal(r.items.find((i) => i.warranty.serial === 'SN-0002').notes, 'Festool part no. 100002 · Bench saw');
+});
+
+test('TC-A35 the same list a second time adds nothing', () => {
+  const r = fresh();
+  c.applyWarranty(r, c.planWarranty(r, FESTOOL_LIST, CATALOG));
+  const again = c.planWarranty(r, FESTOOL_LIST, CATALOG);
+  assert.equal(again.add.length, 0); assert.equal(again.here.length, 4); assert.equal(again.noDates, 0);
+});
+
+test('TC-A36 matching drops the endings, and one part number with two serials is two items', () => {
+  const r = fresh();
+  const plan = c.planWarranty(r, FESTOOL_LIST, CATALOG);
+  const saw = plan.add.find((a) => a.warranty.serial === 'SN-0001');
+  assert.ok(saw.matched); assert.equal(saw.name, 'TS 55 F'); assert.equal(saw.kind, 'Track saw');
+  const other = plan.add.find((a) => a.warranty.serial === 'SN-0002');
+  assert.ok(!other.matched); assert.equal(other.name, 'SAMPLE SAW'); assert.equal(other.tier, 'Power');
+  assert.equal(plan.add.filter((a) => a.name === 'SAMPLE PACK 5,0 ASI').length, 2);
+  assert.equal(plan.matched, 1);
+});
+
+test('TC-A37 a row without dates still comes in, with those fields empty', () => {
+  const plan = c.planWarranty(fresh(), FESTOOL_LIST, CATALOG);
+  assert.equal(plan.noDates, 1);
+  const w = plan.add.find((a) => a.warranty.serial === 'SN-0002').warranty;
+  assert.equal(w.bought, ''); assert.equal(w.end, '');
+});
+
+test('TC-A38 a typed value is never overwritten; empty fields fill from the file', () => {
+  const r = fresh();
+  const it = c.addItem(r, { name: 'TS 55 F', brand: 'Festool', warranty: { serial: 'SN-0001', bought: '2025-01-01', seller: 'Local dealer' } });
+  const plan = c.planWarranty(r, FESTOOL_LIST, CATALOG);
+  assert.equal(plan.add.length, 3); assert.equal(plan.fills, 1);
+  c.applyWarranty(r, plan);
+  assert.equal(it.warranty.bought, '2025-01-01'); assert.equal(it.warranty.seller, 'Local dealer');
+  assert.equal(it.warranty.end, '2028-03-04'); assert.equal(it.warranty.regNo, 'W-0001'); assert.equal(it.warranty.registered, 'yes');
+});
+
+test('TC-A40 imported warranty details never reach the Box Ctrl export', () => {
+  const r = fresh();
+  const box = c.addContainer(r, { name: 'TRACK SAW' });
+  c.applyWarranty(r, c.planWarranty(r, FESTOOL_LIST, CATALOG), box.id);
+  const csv = c.exportBoxCtrl(r).csv;
+  for (const s of ['SN-0001', 'W-0001', '2025-03-04', '100001']) assert.ok(!csv.includes(s), s);
+});
+
+test('TC-A41 a date that isn\'t month/day/year skips only that row', () => {
+  const bad = FESTOOL_LIST.replace('3/4/2025', '2025-03-04');
+  const plan = c.planWarranty(fresh(), bad, CATALOG);
+  assert.equal(plan.skipped.length, 1); assert.equal(plan.skipped[0].line, 2); assert.match(plan.skipped[0].why, /month\/day\/year/);
+  assert.equal(plan.add.length, 3);
+  assert.equal(c.warrantyDate('2/30/2025', 'mdy'), null);
+});
+
+test('TC-A42 Undo puts the record back as it was', () => {
+  const r = fresh();
+  c.addItem(r, { name: 'TS 55 F', brand: 'Festool', warranty: { serial: 'SN-0001' } });
+  const before = JSON.stringify(r.items);
+  const u = c.applyWarranty(r, c.planWarranty(r, FESTOOL_LIST, CATALOG));
+  c.undoWarranty(r, u);
+  assert.equal(JSON.stringify(r.items), before);
+});
+
+test('TC-E12 a CSV no maker knows is refused, and other columns are never kept', () => {
+  assert.match(c.planWarranty(fresh(), SAMPLE, CATALOG).error, /isn't a warranty list/);
+  const withAddress = FESTOOL_LIST.replace('Category', 'Category,Address').split('\n').map((l, i) => i ? l + ',1 Main St' : l).join('\n');
+  const r = fresh(); c.applyWarranty(r, c.planWarranty(r, withAddress, CATALOG));
+  assert.ok(!JSON.stringify(r).includes('Main St'));
+});
+
+test('TC-E13 a serial on a retired tool counts as already here', () => {
+  const r = fresh();
+  const it = c.addItem(r, { name: 'TS 55 F', brand: 'Festool', warranty: { serial: 'SN-0001' } }); it.status = 'retired';
+  assert.equal(c.planWarranty(r, FESTOOL_LIST, CATALOG).here.length, 1);
+});
+
+test('TC-A34 to TC-A37 against a real export, when one is given', { skip: !process.env.TC_FESTOOL }, () => {
+  const text = readFileSync(process.env.TC_FESTOOL, 'utf8');
+  const r = fresh();
+  const plan = c.planWarranty(r, text, CATALOG);
+  assert.equal(plan.skipped.length, 0, JSON.stringify(plan.skipped));
+  assert.equal(plan.add.length, plan.rows);
+  c.applyWarranty(r, plan);
+  assert.equal(r.items.length, plan.rows);
+  assert.equal(c.planWarranty(r, text, CATALOG).add.length, 0);
+  console.log(`  real export: ${plan.rows} rows, ${plan.matched} matched, ${plan.noDates} without dates`);
 });
