@@ -137,6 +137,15 @@ textarea.in{height:auto;min-height:68px;padding:8px;resize:vertical}
 .health.warn{border-color:var(--attention)}.health.warn b::before{background:var(--attention)}
 .health.ok{border-color:var(--ok)}.health.ok b::before{background:var(--ok)}
 .health.bad{border-color:var(--fault);background:color-mix(in srgb,var(--fault) 7%,transparent)}.health.bad b{color:var(--fault)}.health.bad b::before{background:var(--fault)}
+.guide{display:grid;grid-template-columns:233px minmax(0,1fr);gap:34px;align-items:start;margin-top:21px}
+.guide nav{display:flex;flex-direction:column;border-top:1px solid var(--ink);position:sticky;top:13px}
+.guide nav a{padding:8px 0;border-bottom:1px solid var(--line);text-decoration:none;font-size:var(--t-cap)}
+.guide section{max-width:610px;display:flex;flex-direction:column;gap:8px;margin-bottom:34px;scroll-margin-top:21px}
+.guide h2{margin:0;font-size:var(--t-area);font-weight:600}
+.guide p,.guide li{margin:0}
+.guide ol,.guide ul{margin:0;padding-left:21px;display:flex;flex-direction:column;gap:5px}
+.guide code{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
+@media (max-width:767px){.guide{grid-template-columns:minmax(0,1fr)}.guide nav{position:static}}
 .panel{border:1px solid var(--strong);border-radius:8px;padding:13px;display:flex;flex-direction:column;gap:13px;background:var(--ground)}
 .panel h3,.sub h3{margin:0;font-size:var(--t-body);font-weight:600}
 .sub{display:flex;flex-wrap:wrap;gap:5px 13px;align-items:baseline}

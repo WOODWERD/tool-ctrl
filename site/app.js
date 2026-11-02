@@ -597,6 +597,7 @@ function githubArea() {
       S.ghNote && h('div', { class: 'health bad' }, h('b', {}, 'Not connected'), h('span', {}, S.ghNote)),
       h('div', { class: 'row' }, h('button', { type: 'submit', class: auth ? 'key go' : 'key connect', disabled: S.connecting }, S.connecting ? 'Connecting…' : auth ? 'Save token and sync' : 'Connect'),
         h('a', { class: 'key', href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener noreferrer' }, 'Make a token on GitHub ↗'),
+        h('a', { class: 'key', href: 'guide.html#github' }, 'How to set it up'),
         auth && h('button', { type: 'button', class: 'key stop', onclick: disconnect }, 'Disconnect')),
       h('div', { class: 'health' }, h('b', {}, 'The token stays here'), h('span', {}, 'It is kept on this device only. It never goes in a link, an export, a backup or the repo.')));
     body.push(f);
