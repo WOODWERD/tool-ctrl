@@ -46,7 +46,7 @@ const FESTOOL = [
   ['CTC SYS', 'Cordless extractor', 'Extractor · hose', 'Filter', 'extractor', 'power'],
   ['SYSLITE', 'Work light', 'Light · stand', '', 'light', 'power'],
   ['SYSROCK', 'Jobsite radio', 'Bluetooth radio', '', 'radio', 'power'],
-  // Added 2026-11-02 from Drew's read-through: older tools people still own, Europe-only tools, rails, batteries and lights.
+  // Added 2026-11-02, checked by hand: older tools people still own, Europe-only tools, rails, batteries and lights.
   ['TS 75', 'Track saw', 'Plunge saw · blade', 'Splinter guard', 'track-saw', 'power'],
   ['TSV 60 K', 'Track saw with scoring blade', 'Plunge saw · blades', 'Splinter guard', 'track-saw', 'power'],
   ['HK 85', 'Carpentry saw', 'Circular saw · blade', 'Rip fence', 'circular-saw', 'power'],
