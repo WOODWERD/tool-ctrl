@@ -939,10 +939,14 @@ function modelPanel(x) {
   const r = rec(), found = c.findModels(S.modelQ);
   const tools = c.itemsIn(r, x.id, true).filter((i) => i.brand === 'Festool' && SHIPS_IN[i.name]);
   const ships = tools.length ? c.getModel(SHIPS_IN[tools[0].name]) : null;
+  // Grouped by generation and footprint, then by what the box is, so drawer units and ToolBoxes aren't lost below plain boxes
+  const TYPES = [['box', 'Systainers'], ['drawers', 'Sortainers, Combis and drawer units'], ['tb', 'ToolBoxes and StorageBoxes'], ['other', 'Organizers and others']];
+  const typeOf = (m) => (m.drawers > 0 || m.kind === 'combi' ? 'drawers' : m.kind === 'tb' || m.kind === 'sb' ? 'tb' : /ORG|HWZ|MFT|T-BAG|ENG|PH/i.test(m.name) ? 'other' : 'box');
   const groups = [];
   for (const g of Object.keys(GENERATIONS)) for (const fp of [...new Set(found.filter((m) => m.gen === g).map((m) => m.fp))]) {
-    const rows = found.filter((m) => m.gen === g && m.fp === fp);
-    groups.push({ name: `${GENERATIONS[g]}${g === 'S3' || g === 'TL' || g === 'C' ? ` · ${fp}` : ''}`, rows });
+    const inFp = found.filter((m) => m.gen === g && m.fp === fp);
+    const head = `${GENERATIONS[g]}${g === 'S3' || g === 'TL' || g === 'C' ? ` ${fp}` : ''}`;
+    for (const [t, label] of TYPES) { const rows = inFp.filter((m) => typeOf(m) === t); if (rows.length) groups.push({ name: g === 'tool' || g === 'cart' ? head : `${head} · ${label}`, rows }); }
   }
   const other = S.modelSel === 'other';
   return h('div', { class: 'panel' },
@@ -950,7 +954,7 @@ function modelPanel(x) {
     h('div', { class: 'fbar' },
       searchBox(S.modelQ, 'Any name: M 187, SYS 2, T-Loc III, sort', (v) => { S.modelQ = v; render(); requestAnimationFrame(() => { const i = $('modelQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'modelQ'),
       h('span', { class: 'count' }, h('b', {}, c.fmt(found.length)), ` of ${SYSTAINERS.length} models`)),
-    h('div', { class: 'list tall', style: 'max-height:560px' },
+    h('div', { class: 'list' },
       ships && !S.modelQ && [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, `Ships in · ${tools[0].name}`), h('span', { class: 'gc' }, '1')), modelRow(ships, S.modelSel, 'From the catalog')],
       groups.flatMap((g) => [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, g.name), h('span', { class: 'gc' }, c.fmt(g.rows.length))), ...g.rows.map((m) => modelRow(m, S.modelSel))]),
       h('button', { type: 'button', class: `mrow${other ? ' sel' : ''}`, onclick: () => { S.modelSel = 'other'; render(); } }, h('span', { class: 'glyph' }, h('i', { style: 'width:33px;height:19px;border-style:dashed' })), h('span', { class: 'nm' }, h('b', {}, 'Not listed'), h('small', {}, 'Type a name and a height in mm')), h('span', {}), h('span', {}))),
