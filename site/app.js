@@ -281,7 +281,8 @@ function boxesView() {
       rows.length ? vlist('b', rows) : h('div', { class: 'empty' }, h('b', {}, S.boxQ ? `No boxes match “${S.boxQ}”` : 'No boxes yet'), h('span', {}, S.boxQ ? 'Searched IDs, names, locations and the tools inside.' : 'Add a box, or import a list in Record.'),
         S.boxQ && h('button', { type: 'button', class: 'key', onclick: () => { S.boxQ = ''; render(); } }, 'Clear search')),
       h('div', { class: 'row edit' }, h('button', { type: 'button', class: 'key', onclick: () => boxDialog() }, 'Add box'),
-        S.boxQ && shown.length > 1 && h('button', { type: 'button', class: 'key', onclick: () => modelManyDialog(shown.map((x) => x.id)) }, `Set Systainer model on these ${c.fmt(shown.length)}`), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; S.tickNew = true; S.tickAdded = []; if (S.tickBrand === MY) S.tickBrand = 'All'; render(); } }, 'Add standard tools'))));
+        S.boxQ && shown.length > 1 && h('button', { type: 'button', class: 'key', onclick: () => modelManyDialog(shown.map((x) => x.id)) }, `Set Systainer model on these ${c.fmt(shown.length)}`),
+        r.containers.some((x) => x.status === 'active' && c.takesModel(x) && !x.model) && h('button', { type: 'button', class: 'key', onclick: fillModels }, 'Fill Systainer models from tools'), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; S.tickNew = true; S.tickAdded = []; if (S.tickBrand === MY) S.tickBrand = 'All'; render(); } }, 'Add standard tools'))));
   return h('div', { class: 'split' }, list, S.tick === 'loose' && !S.box ? tickPanel('loose') : S.box ? boxDetail() : looseArea());
 }
 
@@ -976,6 +977,14 @@ function modelPanel(x) {
       x.model && h('button', { type: 'button', class: 'key', onclick: () => { change(() => c.setModel(rec(), x.id, ''), { containers: [x.id] }); S.modelPick = ''; render(); } }, 'Clear model'),
       h('button', { type: 'button', class: 'key', onclick: () => { S.modelPick = ''; render(); } }, 'Cancel'),
       h('span', { class: 'sp' }), h('span', { class: 'small' }, 'TANOS and Festool boxes only.')));
+}
+// TC-R145
+function fillModels() {
+  clearUndo();
+  let res; change(() => { res = c.fillModelsFromTools(rec()); }, 'all');
+  render();
+  const n = res.filled.length;
+  offerUndo(n ? `Filled ${nOf(n, 'box', 'boxes')} from ${n === 1 ? 'its tool' : 'their tools'}, marked Check your box. ${res.none.length ? `${nOf(res.none.length, 'box', 'boxes')} had no tool with a known Systainer.` : ''}` : `No box had a tool with a known Systainer. ${nOf(res.none.length, 'box', 'boxes')} still need a model.`, res.undo);
 }
 // TC-R139: one model on the boxes a search found
 function modelManyDialog(ids) {

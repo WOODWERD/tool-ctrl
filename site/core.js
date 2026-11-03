@@ -627,6 +627,21 @@ export function setModelMany(rec, ids, modelId) {
   res.undo = () => { for (const [id, b] of before) { const c = getC(rec, id); if (c && b) Object.assign(c, b); } };
   return res;
 }
+// TC-R145: fill empty models from the Systainer a box's Festool tool ships in, marked to check
+export function fillModelsFromTools(rec) {
+  const res = { filled: [], none: [] }, before = [];
+  for (const box of rec.containers) {
+    if (box.status !== 'active' || !takesModel(box) || box.model) continue;
+    const tool = itemsIn(rec, box.id, true).filter((i) => i.status === 'active' && i.brand === 'Festool' && SHIPS_IN[i.name])
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))[0];
+    if (!tool) { res.none.push(box.id); continue; }
+    before.push([box.id, box.model, box.modelFrom]);
+    setModel(rec, box.id, SHIPS_IN[tool.name], { fromCatalog: true });
+    res.filled.push({ id: box.id, model: SHIPS_IN[tool.name], tool: tool.name });
+  }
+  res.undo = () => { for (const [id, m, f] of before) { const x = getC(rec, id); x.model = m || ''; x.modelFrom = f || ''; } };
+  return res;
+}
 // TC-R130: older records gain the new kinds of box
 export function ensureKinds(rec) {
   const k = rec.meta.kinds || (rec.meta.kinds = []);

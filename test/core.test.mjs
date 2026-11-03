@@ -497,3 +497,20 @@ test('TC-R143 older records gain the new kinds of box', () => {
   c.ensureKinds(r);
   assert.deepEqual(r.meta.kinds, ['Systainer', 'Bag', 'Systainer tool', 'Cart']);
 });
+test('TC-R145 fill empty models from the tools inside, never over one already set', () => {
+  const r = fresh();
+  const a = c.addContainer(r, { name: 'A', kindOfBox: 'Systainer' });
+  c.addItem(r, { name: 'TS 55 F', brand: 'Festool', kind: 'Track saw', tier: 'Power', place: a.id });
+  const b = c.addContainer(r, { name: 'B', kindOfBox: 'Systainer' });
+  c.addItem(r, { name: 'Pliers', brand: '', tier: 'Hand', place: b.id });
+  const d = c.addContainer(r, { name: 'D', kindOfBox: 'Systainer' }); c.setModel(r, d.id, 'sys3-m-137');
+  c.addItem(r, { name: 'OF 1400', brand: 'Festool', tier: 'Power', place: d.id });
+  const bag = c.addContainer(r, { name: 'BAG', kindOfBox: 'Bag' });
+  c.addItem(r, { name: 'CXS 18', brand: 'Festool', tier: 'Power', place: bag.id });
+  const res = c.fillModelsFromTools(r);
+  assert.deepEqual(res.filled.map((x) => [x.id, x.model]), [[a.id, 'sys3-m-337']]);
+  assert.deepEqual(res.none, [b.id]);
+  assert.deepEqual([a.modelFrom, d.model, bag.model || ''], ['catalog', 'sys3-m-137', '']);
+  res.undo();
+  assert.equal(a.model, '');
+});
