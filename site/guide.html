@@ -82,12 +82,14 @@
     <a href="#start">Getting started</a>
     <a href="#numbers">Box numbers</a>
     <a href="#drawers">Drawers, trays and carts</a>
+    <a href="#systainer">Systainer models</a>
     <a href="#tools">Adding tools</a>
     <a href="#photo">Read from photo</a>
     <a href="#find">Finding a tool</a>
     <a href="#warranty">Warranty details</a>
     <a href="#import">Importing a list</a>
     <a href="#labels">Labels with Box Ctrl</a>
+    <a href="#stacks">Stacks with Stack Ctrl</a>
     <a href="#phone">On a phone</a>
     <a href="#keep">Keeping your record</a>
     <a href="#github">Storing it on GitHub</a>
@@ -98,6 +100,7 @@
     <section id="what"><h2>What it is</h2>
       <p>Tool Ctrl records every tool box you own, the drawers in each one and the tools inside. Every box gets a number that never changes, so a label you print today still matches in five years. Search finds any tool in a few seconds, with the shelf, box and drawer it's in.</p>
       <p>It runs in your browser and saves on your device. There's no account. You can also keep the record in a private GitHub repo of your own, which syncs it between your computer, iPad and phone.</p>
+      <p>Two other tools work from the same record. <a href="https://woodwerd.github.io/box-ctrl/">Box Ctrl</a> prints a label for every box. <a href="https://woodwerd.github.io/stack-ctrl/">Stack Ctrl</a> draws your Systainers to scale and lets you stack them. Tool Ctrl holds the facts; they use them.</p>
     </section>
 
     <section id="start"><h2>Getting started</h2>
@@ -123,7 +126,20 @@
     <section id="drawers"><h2>Drawers, trays and carts</h2>
       <p>Open a box and press Add drawers. Say how many and they are made in one step: a drawer unit with three drawers gets WW-014-D1 to D3. D is a drawer, T a tray and B a fixed bin. Drawers count from the top, starting at 1, and left to right where they sit side by side.</p>
       <p>A drawer is the smallest thing with a number. A small case inside a drawer goes in the tool's notes.</p>
-      <p>Sits on links a box to the one it rides on, such as five Systainers on a cart. Its location then follows the cart.</p>
+      <p>Sits on links a box to the one it rides on, such as five Systainers on a cart. Its location then follows the cart. Stack Ctrl sets this for you as you build stacks.</p>
+    </section>
+
+    <section id="systainer"><h2>Systainer models</h2>
+      <p>A Systainer, Sortainer, Systainer drawer unit, cart, or a Festool tool that is itself a Systainer, such as a CT SYS, can have its model: SYS3 M 187, SYS 2 TL and so on. The model gives the box its size, which Stack Ctrl draws. It changes nothing else.</p>
+      <ol>
+        <li>Open the box and press Systainer model.</li>
+        <li>Search by any name it goes by: M 187, SYS 2, T-Loc III, sort. The list covers TANOS and Festool boxes, grouped by generation and size, each with a small outline of its front. Older boxes are tagged Not sold now.</li>
+        <li>Tap the one that matches and press Use this on that row.</li>
+      </ol>
+      <p>Picking a Sortainer offers to add its drawers, already counted. Nothing is added until you say so.</p>
+      <p><b>Ships in.</b> Most Festool tools come in a Systainer. When you tick one into its own new box, Tool Ctrl fills in the Systainer it ships in now and marks it Check your box, because a different set, or one bought before 2019, may have come in another. Press It's right once you've looked.</p>
+      <p><b>Many at once.</b> Search the Boxes view, then Set Systainer model on these. Boxes that aren't Systainers, such as bags, are skipped.</p>
+      <p><b>Not listed.</b> A box that isn't on the list can take a name and a height in mm instead. A spreadsheet with a <span class="mono">systainer</span> or <span class="mono">size</span> column fills models in on import.</p>
     </section>
 
     <section id="tools"><h2>Adding tools</h2>
@@ -181,7 +197,21 @@
     </section>
 
     <section id="labels"><h2>Labels with Box Ctrl</h2>
-      <p>Tool Ctrl doesn't print. Record › Export for Box Ctrl saves a .csv in the columns <a href="https://woodwerd.github.io/box-ctrl/">Box Ctrl</a> imports, one row per box, and one per drawer if you choose. Contents are built from tool names, two lines of up to 40 characters. If a box holds more than fits, the export names it and keeps the first tools that fit, without cutting a word. Warranty details never go in this file.</p>
+      <p>Tool Ctrl doesn't print. <a href="https://woodwerd.github.io/box-ctrl/">Box Ctrl</a> does, with each box's number, name and what's in it. Because a box number never changes, a label stays right however often you move or restack the box.</p>
+      <p><b>With GitHub,</b> the easy way. Connect Box Ctrl to the same private repo and token as Tool Ctrl; in the same browser it offers Use Tool Ctrl's repo. Then press Get boxes from Tool Ctrl. It shows what's new and what's changed before anything changes, and boxes you add later come across the same way.</p>
+      <p><b>Without GitHub,</b> use a file. In Tool Ctrl, Record › Export for Box Ctrl saves a .csv, one row per box, and one per drawer if you choose. In Box Ctrl, open that file.</p>
+      <p>Either way, contents are built from tool names, two lines of up to 40 characters. If a box holds more than fits, Tool Ctrl names it and keeps the first tools that fit, without cutting a word. Only numbers, names, kinds and contents go across. Warranty details, locations and notes never do.</p>
+    </section>
+
+    <section id="stacks"><h2>Stacks with Stack Ctrl</h2>
+      <p><a href="https://woodwerd.github.io/stack-ctrl/">Stack Ctrl</a> draws every Systainer in your record from the front, to scale, and lets you drag them into stacks on the floor or on a cart. Each stack shows how tall it stands, in mm and inches.</p>
+      <ol>
+        <li>Give your Systainers their models here (see Systainer models). A box without one shows as an outline at a standard height.</li>
+        <li>Open Stack Ctrl in the same browser. It reads this record directly; there's nothing to export.</li>
+        <li>Drag a box from the tray onto the floor to start a stack, then drop boxes on top, between two, or onto a cart. It won't stack boxes that don't latch, such as a Classic on a newer box, and says why.</li>
+      </ol>
+      <p>Stack Ctrl changes only where each box sits. Tool Ctrl shows the result as Sits on and location, and syncs it to GitHub like any other change, so the stacks reach your other devices. Names, models and contents are changed here, in Tool Ctrl.</p>
+      <p>Arrange stacks on a computer or iPad. On a phone, Stack Ctrl is for looking.</p>
     </section>
 
     <section id="phone"><h2>On a phone</h2>
