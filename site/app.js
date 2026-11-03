@@ -930,10 +930,22 @@ function glyph(m) {
   const w = Math.round((BOX_W[m.fp] || 396) / 12), hh = Math.max(6, Math.round(m.h / 10));
   return h('span', { class: 'glyph', 'aria-hidden': 'true' }, h('i', { style: `width:${w}px;height:${hh}px` }, profile(m).map(([cls, st]) => h('b', { class: cls, style: st }))));
 }
-function modelRow(m, pick, extra = '') {
-  return h('button', { type: 'button', class: `mrow${pick === m.id ? ' sel' : ''}`, 'aria-pressed': String(pick === m.id), onclick: () => { S.modelSel = m.id; render(); } },
-    glyph(m), h('span', { class: 'nm' }, h('b', {}, m.name), h('small', {}, extra || m.aka.filter((a) => !/^Systainer[³3] /.test(a) && !m.name.endsWith(a)).slice(0, 2).join(' · ') || GENERATIONS[m.gen])),
-    h('span', { class: 'sz mono' }, `${m.w} × ${m.d} × ${m.h}`), h('span', { class: 'tg' }, !m.sold && h('span', { class: 'tag' }, 'Not sold now')));
+// A tap picks a row; the picked row gets its own Use button, so there's no scrolling to the bottom to confirm
+function modelRow(m, pick, extra = '', x = null) {
+  const on = pick === m.id;
+  const kids = [glyph(m), h('span', { class: 'nm' }, h('b', {}, m.name), h('small', {}, extra || m.aka.filter((a) => !/^Systainer[³3] /.test(a) && !m.name.endsWith(a)).slice(0, 2).join(' · ') || GENERATIONS[m.gen])),
+    h('span', { class: 'sz mono' }, `${m.w} × ${m.d} × ${m.h}`),
+    h('span', { class: 'tg' }, on && x ? h('button', { type: 'button', class: 'key go use', onclick: () => useModel(x, m.id) }, 'Use this') : !m.sold && h('span', { class: 'tag' }, 'Not sold now'))];
+  return on ? h('div', { class: 'mrow sel', 'aria-current': 'true' }, kids)
+    : h('button', { type: 'button', class: 'mrow', onclick: () => { S.modelSel = m.id; render(); } }, kids);
+}
+function useModel(x, sel) {
+  const id = x.id;
+  if (sel === 'other') { const nm = $('mname').value.trim(), hv = parseInt($('mh').value, 10); if (!nm || !(hv > 0)) return; change(() => c.setModel(rec(), id, 'other', { other: { name: nm, h: hv } }), { containers: [id] }); }
+  else change(() => c.setModel(rec(), id, sel), { containers: [id] });
+  const m = c.getModel(sel), k = m?.drawers || 0;
+  S.modelPick = ''; render();
+  if (k > 0 && !c.compsOf(rec(), id).length) drawersDialog(id, k); // TC-R136: offered, never added unasked
 }
 function modelPanel(x) {
   const r = rec(), found = c.findModels(S.modelQ);
@@ -955,19 +967,12 @@ function modelPanel(x) {
       searchBox(S.modelQ, 'Any name: M 187, SYS 2, T-Loc III, sort', (v) => { S.modelQ = v; render(); requestAnimationFrame(() => { const i = $('modelQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'modelQ'),
       h('span', { class: 'count' }, h('b', {}, c.fmt(found.length)), ` of ${SYSTAINERS.length} models`)),
     h('div', { class: 'list' },
-      ships && !S.modelQ && [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, `Ships in · ${tools[0].name}`), h('span', { class: 'gc' }, '1')), modelRow(ships, S.modelSel, 'From the catalog')],
-      groups.flatMap((g) => [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, g.name), h('span', { class: 'gc' }, c.fmt(g.rows.length))), ...g.rows.map((m) => modelRow(m, S.modelSel))]),
+      ships && !S.modelQ && [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, `Ships in · ${tools[0].name}`), h('span', { class: 'gc' }, '1')), modelRow(ships, S.modelSel, 'From the catalog', x)],
+      groups.flatMap((g) => [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, g.name), h('span', { class: 'gc' }, c.fmt(g.rows.length))), ...g.rows.map((m) => modelRow(m, S.modelSel, '', x))]),
       h('button', { type: 'button', class: `mrow${other ? ' sel' : ''}`, onclick: () => { S.modelSel = 'other'; render(); } }, h('span', { class: 'glyph' }, h('i', { style: 'width:33px;height:19px;border-style:dashed' })), h('span', { class: 'nm' }, h('b', {}, 'Not listed'), h('small', {}, 'Type a name and a height in mm')), h('span', {}), h('span', {}))),
     other && h('div', { class: 'row' }, field('Name · up to 28', inp('mname', x.modelOther?.name || '', { id: 'mname', maxlength: 28 })), field('Height on its feet, mm', inp('mh', x.modelOther?.h || '', { id: 'mh', inputmode: 'numeric' }))),
     h('div', { class: 'row' },
-      h('button', { type: 'button', class: 'key go', disabled: !S.modelSel, onclick: () => {
-        const id = x.id, sel = S.modelSel;
-        if (sel === 'other') { const nm = $('mname').value.trim(), hv = parseInt($('mh').value, 10); if (!nm || !(hv > 0)) return; change(() => c.setModel(rec(), id, 'other', { other: { name: nm, h: hv } }), { containers: [id] }); }
-        else change(() => c.setModel(rec(), id, sel), { containers: [id] });
-        const m = c.getModel(sel), k = m?.drawers || 0;
-        S.modelPick = ''; render();
-        if (k > 0 && !c.compsOf(rec(), id).length) drawersDialog(id, k); // TC-R136: offered, never added unasked
-      } }, other ? 'Use this' : S.modelSel ? `Use ${c.getModel(S.modelSel)?.name || ''}` : 'Pick a model'),
+      h('button', { type: 'button', class: 'key go', disabled: !S.modelSel, onclick: () => useModel(x, S.modelSel) }, other ? 'Use this' : S.modelSel ? `Use ${c.getModel(S.modelSel)?.name || ''}` : 'Pick a model'),
       x.model && h('button', { type: 'button', class: 'key', onclick: () => { change(() => c.setModel(rec(), x.id, ''), { containers: [x.id] }); S.modelPick = ''; render(); } }, 'Clear model'),
       h('button', { type: 'button', class: 'key', onclick: () => { S.modelPick = ''; render(); } }, 'Cancel'),
       h('span', { class: 'sp' }), h('span', { class: 'small' }, 'TANOS and Festool boxes only.')));
@@ -1018,6 +1023,6 @@ mq.addEventListener('change', () => { S.phone = mq.matches; S.sel.clear(); S.tic
 chan?.addEventListener('message', async (e) => {
   if (e.data?.from !== 'stack-ctrl' || !S.rec) return;
   let fresh; try { fresh = await loadRecord(); } catch { return; }
-  for (const id of e.data.ids || []) { const a = c.getC(S.rec, id), b = fresh && c.getC(fresh, id); if (a && b) { a.sitsOn = b.sitsOn; a.location = b.location; } }
+  for (const id of e.data.ids || []) { const a = c.getC(S.rec, id), b = fresh && c.getC(fresh, id); if (a && b) { a.sitsOn = b.sitsOn; a.location = b.location; if ('standing' in b) a.standing = b.standing; } }
   render(); later();
 });

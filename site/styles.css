@@ -227,6 +227,8 @@ textarea.in{height:auto;min-height:68px;padding:8px;resize:vertical}
 .mrow .nm small{color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mrow .sz{color:var(--soft);white-space:nowrap}
 .mrow .tg{justify-self:end}
+.mrow .key.use{height:34px;padding:0 13px;font-size:var(--t-cap)}
+@media (pointer:coarse){.mrow .key.use{height:44px}}
 .glyph{display:flex;align-items:flex-end;justify-content:center;min-height:34px;padding:3px 0}
 .glyph i{position:relative;display:block;border:1.5px solid var(--ink);background:var(--surface);overflow:hidden}
 .glyph i b{position:absolute;display:block}
