@@ -277,12 +277,17 @@ export function pathText(rec, it) {
 }
 
 // ---------- search, filter, group (TC-R40, TC-R93, TC-R94) ----------
-const words = (q) => String(q).toLowerCase().split(/\s+/).filter(Boolean);
+// TC-R152: case, word order, spaces and punctuation don't matter. Each field is squeezed to letters and
+// digits and kept apart by |, so "ets125", "ETS 125" and "125 ets" all find the ETS 125.
+const squeeze = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const words = (q) => String(q).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const fields = (...f) => f.map((x) => squeeze(Array.isArray(x) ? x.join(' ') : x)).join('|');
 export function itemText(rec, it) {
   const p = placeParts(rec, it.place, it.looseAt);
-  return `${it.name} ${it.brand} ${it.kind} ${it.notes} ${it.warranty?.serial || ''} ${p.label} ${p.location} ${p.via.join(' ')}`.toLowerCase();
+  return fields(it.name, it.brand, it.kind, it.notes, it.warranty?.serial, p.label, p.location, p.via, it.looseAt);
 }
-export const containerText = (rec, c) => `${c.id} ${c.name} ${c.kind} ${c.kindOfBox} ${modelName(c)} ${locationOf(rec, c.id)} ${c.notes}`.toLowerCase();
+export const containerText = (rec, c) => fields(c.id, c.name, c.kind, c.kindOfBox, modelName(c), locationOf(rec, c.id), c.notes);
+const compText = (k) => fields(k.id, k.name, COMP_TYPES[k.type]);
 
 export function search(rec, q) {
   const w = words(q);
@@ -290,6 +295,99 @@ export function search(rec, q) {
   const containers = w.length ? rec.containers.filter((c) => match(containerText(rec, c))) : rec.containers.slice();
   const items = rec.items.filter((i) => i.status === 'active' && (!w.length || match(itemText(rec, i))));
   return { containers, items };
+}
+
+// ---------- Find (TC-R150 to TC-R160) ----------
+export const FIND_SHOW = 5; // TC-R154: up to 5 in each group
+const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
+// TC-R152: a number alone, or a prefix and a number, read as a box number: "14", "ww14", "WW 14", "WW-014"
+export function readBoxNumber(rec, q) {
+  const m = /^([a-z]{1,4})?0*(\d{1,3})$/.exec(squeeze(q));
+  if (!m || +m[2] === 0) return null;
+  const prefixes = [...new Set([...(rec.meta.prefixes || []), rec.meta.prefix, ...rec.containers.map((x) => x.prefix)].filter(Boolean))];
+  const want = m[1] ? m[1].toUpperCase() : null;
+  if (want && !prefixes.includes(want)) return null;
+  return { n: +m[2], ids: (want ? [want] : prefixes).map((p) => formatId(p, +m[2])) };
+}
+
+// TC-R156: where a box sits in a stack, counted from the bottom, as Stack Ctrl draws it
+export function stackPlace(rec, cid) {
+  const box = getC(rec, cid);
+  if (!box || !takesModel(box) || box.kindOfBox === 'Cart') return null;
+  const w = whereIs(rec, cid);
+  const root = getC(rec, w.via[0] || cid);
+  const onTop = rec.containers.some((o) => o.sitsOn === cid && o.status === 'active');
+  if (!w.via.length && !onTop) return null;
+  const cart = root.kindOfBox === 'Cart' ? root : null;
+  const pos = cart ? w.via.length : w.via.length + 1;
+  const orderNotSet = !!cart && rec.containers.filter((o) => o.sitsOn === cart.id && o.status === 'active').length > 1;
+  const where = cart ? `In the stack on ${cart.id}` : `In a stack on the floor`;
+  return { cart: cart?.id || '', bottom: cart ? '' : root.id, location: w.location, pos, orderNotSet,
+    text: `${where}${w.location ? ` · ${w.location}` : ''}${orderNotSet ? ', order not set' : `, ${pos === 1 ? 'at the bottom' : `${ordinal(pos)} from the bottom`}`}` };
+}
+
+// TC-R153: what a box result shows
+export function boxSummary(rec, cid, few = 4) {
+  const x = getC(rec, cid), w = whereIs(rec, cid);
+  const tools = itemsIn(rec, cid, true).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return { id: x.id, name: x.name, kindOfBox: x.kindOfBox, model: modelName(x), location: [w.location, ...w.via].filter(Boolean).join(' › '),
+    count: tools.length, first: tools.slice(0, few).map((t) => t.name), more: Math.max(0, tools.length - few), stack: stackPlace(rec, cid), retired: x.status === 'retired' };
+}
+
+// TC-R151, TC-R153, TC-R154, TC-R157: one search over tools, boxes and drawers, grouped and ranked
+export function find(rec, q, { retired = false } = {}) {
+  const w = words(q), sq = squeeze(q);
+  const out = { q: String(q).trim(), exact: [], boxes: [], tools: [], drawers: [], retiredHidden: 0, number: null };
+  if (!w.length) return out;
+  const match = (t) => w.every((x) => t.includes(x));
+  // exact name first, then names that start with the search, then the rest by name
+  const rank = (name) => { const n = squeeze(name); return n === sq ? 0 : n.startsWith(sq) || n.startsWith(w[0]) ? 1 : 2; };
+  const order = (list, name) => list.map((x) => ({ x, r: rank(name(x)) })).sort((a, b) => a.r - b.r || name(a.x).localeCompare(name(b.x), undefined, { numeric: true })).map((o) => o.x);
+  const num = readBoxNumber(rec, q);
+  out.number = num;
+  if (num) out.exact = num.ids.map((id) => getC(rec, id)).filter((x) => x && (retired || x.status === 'active'));
+  const exactIds = new Set(out.exact.map((x) => x.id));
+  const boxes = [], tools = [];
+  for (const x of rec.containers) {
+    if (exactIds.has(x.id) || !match(containerText(rec, x))) continue;
+    if (x.status !== 'active' && !retired) { out.retiredHidden++; continue; }
+    boxes.push(x);
+  }
+  for (const it of rec.items) {
+    if (!match(itemText(rec, it))) continue;
+    if (it.status !== 'active' && !retired) { out.retiredHidden++; continue; }
+    tools.push(it);
+  }
+  const live = (k) => { const b = getC(rec, k.containerId); return b && (retired || b.status === 'active'); };
+  out.boxes = order(boxes, (x) => x.name || x.id);
+  out.tools = order(tools, (i) => i.name);
+  out.drawers = order(rec.compartments.filter((k) => live(k) && match(compText(k))), (k) => k.name || k.id);
+  // a drawer ID typed in full goes to the top of Drawers
+  const d = parseId(String(q).replace(/\s+/g, ''));
+  if (d?.comp) { const id = compId(d.container, d.comp.type, d.comp.n), i = out.drawers.findIndex((k) => k.id === id); if (i > 0) out.drawers.unshift(...out.drawers.splice(i, 1)); }
+  return out;
+}
+
+// TC-R158: the most useful next step when Find has nothing
+export function nothingFound(rec, f) {
+  if (f.number) {
+    const ids = f.number.ids;
+    const prefix = ids.length === 1 ? ids[0].split('-')[0] : rec.meta.prefix;
+    const mine = rec.containers.filter((x) => x.prefix === prefix && x.status === 'active').sort((a, b) => a.n - b.n);
+    const top = mine[mine.length - 1];
+    return { title: `No box ${ids.join(' or ')}`, text: top ? `Box numbers in this record run from ${mine[0].id} to ${top.id}. Check the number on the label.` : 'There are no boxes in this record yet.', open: top?.id || '' };
+  }
+  const n = words(f.q).length;
+  return { title: `Nothing matches “${f.q}”`, text: `Find looked in ${fmt(rec.items.filter((i) => i.status === 'active').length)} tools, ${fmt(rec.containers.filter((x) => x.status === 'active').length)} boxes and their drawers, with models and serial numbers.${n > 1 ? ' Try fewer words.' : ' Check the spelling, or try a shorter word.'}`, open: '' };
+}
+
+// TC-R160: a box ID after the # in the link, as a Box Ctrl QR code makes it
+export function askedId(hash) {
+  let s = String(hash || '').replace(/^#/, '');
+  try { s = decodeURIComponent(s); } catch { return ''; }
+  s = s.trim();
+  return s.length > 0 && s.length <= LIMITS.id + 8 ? s : '';
 }
 
 export function filterItems(rec, items, f = {}) {

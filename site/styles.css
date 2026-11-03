@@ -295,3 +295,46 @@ dialog fieldset .f{flex:1 1 160px}
 
 /* phones: hang the All WOODWERD tools menu from the full-width strip, so it can't run off the left edge */
 @media (max-width:767px){details.alltools,details.kitmenu{position:static}.toolmenu{left:0;right:0;width:auto;max-width:none}}
+/* Find (TC-S17, TC-S18) */
+.findbar{display:flex;flex-wrap:wrap;gap:8px 13px;align-items:center;margin-top:-8px}
+.findbar[hidden],#recent[hidden]{display:none}
+.search.find{flex:1 1 377px;height:44px;padding:0 5px 0 13px}
+.search.find input{font-size:var(--t-body)}
+@media (pointer:coarse){.search.find input{font-size:16px}}
+.kbd{font:500 var(--t-micro) "JetBrains Mono",monospace;border:1px solid var(--strong);border-radius:3px;padding:1px 6px;color:var(--soft);margin-right:5px}
+@media (pointer:coarse),(max-width:767px){.kbd{display:none}}
+.clr{width:34px;height:34px;border:0;background:transparent;color:var(--soft);display:inline-flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;padding:0;flex:none}
+.clr[hidden]{display:none}
+@media (pointer:coarse){.clr{width:44px;height:44px}}
+.tick{display:inline-flex;gap:5px;align-items:center;min-height:34px;font-size:var(--t-cap);color:var(--soft);cursor:pointer}
+.tick[hidden]{display:none}
+@media (pointer:coarse){.tick{min-height:44px}}
+.tick input{accent-color:var(--primary);margin:0}
+#recent{margin-top:-13px}
+.rrow{display:flex;align-items:center;gap:13px;width:100%;min-height:44px;padding:0 13px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:500 var(--t-cap) "JetBrains Mono",monospace}
+.rrow .ic{color:var(--soft)}
+.ghead.static{cursor:default}
+.fitem{border-bottom:1px solid var(--line)}
+.fitem:last-child{border-bottom:0}
+.frow{display:grid;grid-template-columns:76px minmax(0,1fr) 44px;gap:8px;align-items:baseline;width:100%;min-height:44px;padding:8px;border:0;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.frow.t{grid-template-columns:minmax(0,1fr) 44px}
+.frow.d{grid-template-columns:110px minmax(0,1fr) 44px}
+.frow:hover{background:color-mix(in srgb,var(--accent-tint) 55%,transparent)}
+.frow .fid{font:500 var(--t-cap) "JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.frow .fnm{display:flex;flex-direction:column;gap:1px;min-width:0}
+.frow .fnm b{font-size:var(--t-cap);font-weight:600;letter-spacing:.04em;overflow-wrap:anywhere}
+.frow .fnm small{font-size:var(--t-cap);color:var(--soft);overflow-wrap:anywhere}
+.frow .fnm .fpath{font-family:"JetBrains Mono",monospace}
+.frow .fn{font:400 var(--t-cap) "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;color:var(--soft);text-align:right}
+.frow.retired .fnm b,.frow.retired .fid{color:var(--soft);text-decoration:line-through}
+.fstack{display:flex;flex-wrap:wrap;align-items:center;gap:3px 13px;padding:0 8px 8px 92px;font-size:var(--t-cap);color:var(--soft)}
+.fstack a,.xstack a{color:var(--accent-text);font-weight:500;text-decoration:underline;text-decoration-color:currentColor}
+@media (pointer:coarse){.fstack a,.xstack a{min-height:44px;display:inline-flex;align-items:center}}
+.more{display:flex;align-items:center;width:100%;min-height:var(--ghead);border:0;border-top:1px solid var(--line);background:var(--ground);color:var(--ink);font:500 var(--t-cap) Inter,Arial,sans-serif;cursor:pointer;text-align:left;padding:0 8px}
+.exact{border:1px solid var(--primary);box-shadow:inset 0 0 0 1px var(--primary);border-radius:13px;padding:21px;display:flex;flex-direction:column;gap:13px;background:var(--surface)}
+@media (max-width:767px){.exact{padding:13px}}
+.exact h3{margin:0;display:flex;flex-wrap:wrap;gap:3px 13px;align-items:baseline;font-size:var(--t-area);font-weight:600;letter-spacing:.04em}
+.xstack{display:flex;flex-wrap:wrap;align-items:center;gap:5px 13px;font-size:var(--t-cap);color:var(--soft);border-top:1px solid var(--line);padding-top:13px}
+.none h3{margin:0;font-size:var(--t-body);font-weight:600}
+.none p{margin:0;font-size:var(--t-cap);color:var(--soft);max-width:68ch}
+.irow.mark{background:var(--accent-tint);box-shadow:inset 3px 0 0 var(--primary)}

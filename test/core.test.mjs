@@ -514,3 +514,129 @@ test('TC-R145 fill empty models from the tools inside, never over one already se
   res.undo();
   assert.equal(a.model, '');
 });
+
+// ---------- Find (TC-R150 to TC-R160). Made-up records only. ----------
+const shop = () => {
+  const r = fresh();
+  for (let n = 1; n <= 11; n++) c.addContainer(r, { name: `BOX ${n}`, location: 'Shop wall' });
+  const of = c.addContainer(r, { name: 'OF 1010', kind: 'Router', location: 'Shop wall' }); // WW-012
+  c.setModel(r, of.id, 'sys3-m-237');
+  c.addCompartments(r, of.id, 'D', 2);
+  c.addItem(r, { name: 'OF 1010', brand: 'Festool', kind: 'Router', place: `${of.id}-D2` });
+  c.addItem(r, { name: 'ETS 125 REQ', brand: 'Festool', kind: 'Sander', place: `${of.id}-D1`, warranty: { serial: 'SN-4410' } });
+  return { r, of };
+};
+
+test('TC-A51 "router" lists the OF 1010 with its full path', () => {
+  const { r } = shop();
+  const f = c.find(r, 'router');
+  assert.equal(f.tools[0].name, 'OF 1010');
+  assert.equal(c.pathText(r, f.tools[0]), 'Shop wall › WW-012 › D2 › OF 1010');
+  assert.deepEqual(f.boxes.map((x) => x.id), ['WW-012']);
+});
+
+test('TC-A52 "ww12", "12" and "WW 12" each put WW-012 first, alone', () => {
+  const { r } = shop();
+  for (const q of ['ww12', '12', 'WW 12', 'WW-012', 'ww012']) {
+    const f = c.find(r, q);
+    assert.deepEqual(f.exact.map((x) => x.id), ['WW-012'], q);
+    assert.ok(!f.boxes.some((x) => x.id === 'WW-012'), q);
+  }
+  assert.equal(c.readBoxNumber(r, 'zz12'), null); // not a prefix in this record
+  assert.equal(c.readBoxNumber(r, 'router'), null);
+});
+
+test('TC-R152 word order, spaces and punctuation are ignored', () => {
+  const { r } = shop();
+  for (const q of ['ets125', 'ETS 125', '125 ets', 'ets-125']) assert.equal(c.find(r, q).tools[0]?.name, 'ETS 125 REQ', q);
+  assert.equal(c.find(r, 'sn4410').tools[0]?.name, 'ETS 125 REQ'); // serial numbers too (TC-R151)
+});
+
+test('TC-A53 a box result shows its location, model, tool count and first names', () => {
+  const r = fresh();
+  const b = c.addContainer(r, { name: 'DOMINO DF 500', location: 'Shop wall', n: 21 });
+  c.setModel(r, b.id, 'sys3-m-187');
+  ['DOMINO DF 500', 'Trim stop', 'Cross stop', 'Tenons 5 x 30', 'Tenons 6 x 40', 'Cutter 5 mm', 'Cutter 6 mm'].forEach((name) => c.addItem(r, { name, place: b.id }));
+  const s = c.boxSummary(r, 'WW-021');
+  assert.equal(s.location, 'Shop wall'); assert.equal(s.model, 'SYS3 M 187'); assert.equal(s.count, 7);
+  assert.equal(s.first.length, 4); assert.equal(s.more, 3);
+});
+
+test('TC-A54 40 matching tools show 5, and Show all counts 40', () => {
+  const r = fresh();
+  const b = c.addContainer(r, { name: 'BITS' });
+  for (let i = 1; i <= 40; i++) c.addItem(r, { name: `Bit ${i}`, place: b.id });
+  const f = c.find(r, 'bit');
+  assert.equal(f.tools.length, 40); assert.equal(c.FIND_SHOW, 5);
+  assert.equal(f.tools[0].name, 'Bit 1'); // names that start with the search, by name
+  assert.equal(c.search(r, 'bit').items.length, 40); // Items shows the same 40
+});
+
+test('TC-A55 a box in a stack says where it sits', () => {
+  const r = fresh();
+  const cart = c.addContainer(r, { name: 'CART', kindOfBox: 'Cart', location: 'Shop wall', n: 68 });
+  const low = c.addContainer(r, { name: 'LOW', n: 12 }), mid = c.addContainer(r, { name: 'MID', n: 21 }), top = c.addContainer(r, { name: 'TOP', n: 30 });
+  c.setSitsOn(r, low.id, cart.id); c.setSitsOn(r, mid.id, low.id); c.setSitsOn(r, top.id, mid.id);
+  assert.equal(c.stackPlace(r, 'WW-021').text, 'In the stack on WW-068 · Shop wall, 2nd from the bottom');
+  assert.equal(c.stackPlace(r, 'WW-012').pos, 1);
+  assert.equal(c.stackPlace(r, 'WW-068'), null);
+  const loose = c.addContainer(r, { name: 'ALONE' });
+  assert.equal(c.stackPlace(r, loose.id), null);
+  const r2 = fresh(); const a = c.addContainer(r2, { name: 'A', location: 'Loft' }), b = c.addContainer(r2, { name: 'B' });
+  c.setSitsOn(r2, b.id, a.id);
+  assert.equal(c.stackPlace(r2, a.id).text, 'In a stack on the floor · Loft, at the bottom');
+});
+
+test('TC-A57 "zzz" finds nothing and says what was searched', () => {
+  const { r } = shop();
+  const f = c.find(r, 'zzz');
+  assert.equal(f.exact.length + f.boxes.length + f.tools.length + f.drawers.length, 0);
+  const n = c.nothingFound(r, f);
+  assert.equal(n.title, 'Nothing matches “zzz”'); assert.match(n.text, /2 tools, 12 boxes/);
+  assert.match(c.nothingFound(r, c.find(r, 'zzz yyy')).text, /fewer words/);
+});
+
+test('TC-R158 a number with no box offers the highest box in use', () => {
+  const { r } = shop();
+  const n = c.nothingFound(r, c.find(r, '214'));
+  assert.equal(n.title, 'No box WW-214'); assert.equal(n.open, 'WW-012'); assert.match(n.text, /WW-001 to WW-012/);
+});
+
+test('TC-E20 "14" lists both prefixes\' box 14', () => {
+  const r = fresh();
+  c.addContainer(r, { name: 'MINE', n: 14 });
+  r.meta.prefixes.push('SG'); c.addContainer(r, { name: 'HERS', prefix: 'SG', n: 14 });
+  assert.deepEqual(c.find(r, '14').exact.map((x) => x.id), ['WW-014', 'SG-014']);
+  assert.deepEqual(c.find(r, 'sg14').exact.map((x) => x.id), ['SG-014']);
+});
+
+test('TC-R157 retired boxes and tools stay out unless asked for', () => {
+  const { r } = shop();
+  const old = c.addItem(r, { name: 'Old router', place: 'WW-012' }); old.status = 'retired';
+  assert.ok(!c.find(r, 'old router').tools.length);
+  assert.equal(c.find(r, 'old router').retiredHidden, 1);
+  assert.equal(c.find(r, 'old router', { retired: true }).tools[0].name, 'Old router');
+});
+
+test('TC-R151 drawers are found by name, and a full drawer ID goes first', () => {
+  const { r } = shop();
+  c.getComp(r, 'WW-012-D2').name = 'Router bits';
+  assert.equal(c.find(r, 'router bits').drawers[0].id, 'WW-012-D2');
+  assert.equal(c.find(r, 'WW-012-D1').drawers[0].id, 'WW-012-D1');
+});
+
+test('TC-A58 Find answers within 200 ms at 5,000 tools', () => {
+  const r = fresh();
+  for (let n = 0; n < 100; n++) { const b = c.addContainer(r, { name: `BOX ${n}`, location: n % 2 ? 'Shop wall' : 'Truck' }); c.addCompartments(r, b.id, 'D', 4); }
+  for (let i = 0; i < 5000; i++) c.addItem(r, { name: `Tool ${i}`, brand: 'Festool', place: r.compartments[i % r.compartments.length].id });
+  const t0 = performance.now();
+  for (const q of ['t', 'to', 'too', 'tool', 'tool 4', 'tool 49']) c.find(r, q);
+  assert.ok((performance.now() - t0) / 6 < 200, `${((performance.now() - t0) / 6).toFixed(0)} ms per key`);
+});
+
+test('TC-A59 a label link carries the box ID after the #', () => {
+  assert.equal(c.askedId('#WW-014'), 'WW-014');
+  assert.equal(c.askedId('#WW%2D014'), 'WW-014');
+  assert.equal(c.askedId(''), '');
+  assert.equal(c.askedId('#%E0%A4%A'), '');
+});

@@ -39,6 +39,7 @@ const S = {
   warF: '', warQ: '', warSel: '', plan: null, planFile: '', renumber: true, closeGaps: false, kindOfBox: 'Systainer', drawerRows: true, over: null, note: '',
   undo: null, phone: false, low: false, saving: false, saveFailed: false,
   gh: null, sync: null, syncState: 'off', syncErr: null, conflict: null, choice: null, ghNote: '', connecting: false, renamedNote: '',
+  find: '', findRetired: false, findOpen: {}, fromFind: '', findScroll: 0, mark: '', asked: '',
 };
 const rec = () => S.rec;
 // Stack Ctrl writes where boxes sit into this same record; each app tells the other (SC-R06)
@@ -204,18 +205,149 @@ function render() {
   document.body.classList.toggle('ro', S.phone);
   const r = rec();
   $('views').hidden = !r;
+  $('findbar').hidden = !r;
   leds();
   if (!r) { $('app').replaceChildren(startView()); return; }
+  if (S.asked && r.containers.length) takeAsk();
+  syncFindBar();
   const live = r.items.filter((i) => i.status === 'active');
   $('cBoxes').textContent = c.fmt(r.containers.filter((x) => x.status === 'active').length);
   $('cItems').textContent = c.fmt(live.length);
   $('cWar').textContent = c.fmt(c.warrantyCounts(r).total);
   for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === S.view));
-  document.body.classList.toggle('open', (S.view === 'boxes' && !!S.box) || (S.view === 'warranty' && !!S.warSel));
-  const v = { boxes: boxesView, items: itemsView, warranty: warrantyView, record: recordView }[S.view]();
-  $('app').replaceChildren(v);
+  const finding = !!S.find.trim();
+  document.body.classList.toggle('open', !finding && ((S.view === 'boxes' && !!S.box) || (S.view === 'warranty' && !!S.warSel)));
+  const v = finding ? findView() : { boxes: boxesView, items: itemsView, warranty: warrantyView, record: recordView }[S.view]();
+  $('app').replaceChildren(...[S.asked && askedStrip(), v].filter(Boolean));
+  if (!finding && S.mark) requestAnimationFrame(() => document.querySelector('.irow.mark')?.scrollIntoView({ block: 'center' }));
 }
-for (const b of document.querySelectorAll('#views button')) b.onclick = () => { S.view = b.dataset.view; render(); };
+for (const b of document.querySelectorAll('#views button')) b.onclick = () => { S.view = b.dataset.view; setFind(''); render(); };
+
+// ---- Find (TC-S17, TC-S18, TC-R150 to TC-R160) ----
+const fi = $('find');
+const STACK_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="5" rx="1"/><rect x="5" y="9.5" width="14" height="5" rx="1"/><rect x="5" y="15.5" width="14" height="5" rx="1"/></svg>';
+const CLOCK_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
+// Q19: the last five searches, kept only in this browser and never synced
+const RECENT_KEY = 'toolctrl.recent';
+const recents = () => { try { const a = JSON.parse(localStorage.getItem(RECENT_KEY)); return Array.isArray(a) ? a.slice(0, 5) : []; } catch { return []; } };
+function addRecent(q) {
+  q = String(q).trim(); if (!q) return;
+  const key = q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const list = [q, ...recents().filter((x) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') !== key)].slice(0, 5);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
+}
+function setFind(q) { S.find = q; S.findOpen = {}; if (fi.value !== q) fi.value = q; syncFindBar(); }
+function syncFindBar() {
+  const typed = !!S.find; $('findClr').hidden = !typed; $('findKey').hidden = typed; $('findRetiredL').hidden = !S.find.trim();
+  const list = recents(), box = $('recent');
+  if (document.activeElement !== fi || typed || !list.length || !rec()) { box.hidden = true; box.replaceChildren(); return; }
+  const keep = (e) => e.preventDefault(); // keeps Find focused while a recent search is chosen
+  box.replaceChildren(h('div', { class: 'list', onmousedown: keep },
+    h('div', { class: 'ghead static' }, h('span', { class: 'gn' }, S.phone ? 'Recent on this phone' : 'Recent on this device'), h('span', { class: 'gc' }, list.length)),
+    list.map((q) => h('button', { type: 'button', class: 'rrow', onclick: () => { setFind(q); render(); } }, h('span', { html: CLOCK_IC, style: 'display:inline-flex' }), h('span', {}, q))),
+    h('button', { type: 'button', class: 'more', onclick: () => { try { localStorage.removeItem(RECENT_KEY); } catch { /* storage unavailable */ } syncFindBar(); } }, `Clear recent searches · kept on this ${S.phone ? 'phone' : 'device'} only, never synced`)));
+  box.hidden = false;
+}
+function clearFind() { setFind(''); render(); fi.focus(); }
+// TC-R155: a result opens its box; Back returns to the results as they were
+function showBox(id, place = '', uid = '') {
+  if (S.find.trim()) { S.fromFind = S.find.trim(); S.findScroll = scrollY; addRecent(S.find); }
+  S.view = 'boxes'; S.box = id; S.place = place; S.mark = uid; S.tick = null; S.modelPick = ''; dropPhoto();
+  setFind('');
+}
+function openBox(id, place = '', uid = '') { showBox(id, place, uid); render(); if (!uid) scrollTo(0, 0); }
+function openTool(it) {
+  const k = it.place && c.getComp(rec(), it.place);
+  if (it.place) openBox(k ? k.containerId : it.place, it.place, it.uid);
+  else { showBox('', '', it.uid); render(); } // a loose tool shows in Loose
+}
+function backToFind() { const q = S.fromFind, y = S.findScroll; S.fromFind = ''; S.mark = ''; setFind(q); render(); requestAnimationFrame(() => scrollTo(0, y)); }
+// TC-R160: a box ID after the # opens that box, once there is a record to find it in
+function takeAsk() {
+  const q = S.asked; S.asked = '';
+  try { history.replaceState(null, '', location.pathname + location.search); } catch { /* not allowed here */ }
+  const f = c.find(rec(), q);
+  if (f.exact.length === 1) { setFind(q); showBox(f.exact[0].id); } else setFind(q);
+}
+const askedStrip = () => h('div', { class: 'health warn' }, h('b', {}, 'Opened from the label on ', h('span', { class: 'mono' }, S.asked)),
+  h('span', {}, `${S.phone ? 'This phone' : 'This browser'} has no record yet. ${S.phone ? 'Connect to GitHub or open a backup' : 'Import your list or open a backup'}, and ${S.asked} opens as soon as the record is here.`));
+const stackLink = (id) => h('a', { href: `../stack-ctrl/#${encodeURIComponent(id)}` }, 'See in Stack Ctrl');
+async function copyBox(id, btn) {
+  const s = c.boxSummary(rec(), id, 999);
+  const text = [`${s.id} ${s.name}`.trim(), [s.kindOfBox, s.model].filter(Boolean).join(' · '), s.location, s.stack?.text, `${nOf(s.count, 'tool')}${s.count ? ': ' + s.first.join(', ') : ''}`].filter(Boolean).join('\n');
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { btn.textContent = 'Copy failed'; }
+  setTimeout(() => { btn.textContent = 'Copy details'; }, 1600);
+}
+function exactCard(x, f) {
+  const s = c.boxSummary(rec(), x.id, 5);
+  return h('div', { class: 'exact' },
+    f.q.toUpperCase() !== x.id && h('span', { class: 'micro' }, `Box number · read “${f.q}” as ${x.id}`),
+    h('h3', {}, h('span', { class: 'mono' }, x.id), h('span', {}, x.name || 'No name'), s.retired && h('span', { class: 'tag' }, 'Retired')),
+    h('dl', { class: 'read' }, rd('Location', s.location || 'Not set'), rd('Kind of box', x.kindOfBox), s.model && rd('Systainer model', h('span', { class: 'mono' }, s.model)),
+      rd('Tools', h('span', { class: 'mono' }, c.fmt(s.count))),
+      s.first.length > 0 && h('div', { style: 'grid-column:1 / -1' }, h('dt', {}, 'In it'), h('dd', {}, s.first.join(', ') + (s.more ? `, and ${c.fmt(s.more)} more` : '')))),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'key go', onclick: () => openBox(x.id) }, `Open ${x.id}`),
+      h('button', { type: 'button', class: 'key', onclick: (e) => copyBox(x.id, e.currentTarget) }, 'Copy details')),
+    s.stack && h('div', { class: 'xstack' }, h('span', { html: STACK_IC, style: 'display:inline-flex' }), h('span', {}, s.stack.text), stackLink(x.id)));
+}
+function findView() {
+  const r = rec(), f = c.find(r, S.find, { retired: S.findRetired });
+  const total = f.exact.length + f.boxes.length + f.tools.length + f.drawers.length;
+  const group = (key, title, list, row, more) => list.length > 0 && h('div', { class: 'list' },
+    h('div', { class: 'ghead static' }, h('span', { class: 'gn' }, title), h('span', { class: 'gc' }, c.fmt(list.length))),
+    (S.findOpen[key] ? list : list.slice(0, c.FIND_SHOW)).map(row),
+    list.length > c.FIND_SHOW && !S.findOpen[key] && h('button', { type: 'button', class: 'more', onclick: more }, `Show all ${c.fmt(list.length)} ${title.toLowerCase()}${key === 't' ? ' in Items' : ''}`));
+  const expand = (key) => () => { S.findOpen[key] = true; render(); };
+  const boxRow = (x) => { const s = c.boxSummary(r, x.id); return h('div', { class: 'fitem' },
+    h('button', { type: 'button', class: `frow${s.retired ? ' retired' : ''}`, onclick: () => openBox(x.id) }, h('span', { class: 'fid' }, x.id),
+      h('span', { class: 'fnm' }, h('b', {}, x.name || 'No name'), h('small', {}, [s.location, x.kindOfBox, s.model, nOf(s.count, 'tool'), s.retired && 'Retired'].filter(Boolean).join(' · ')),
+        s.first.length > 0 && h('small', { class: 'fpath' }, s.first.join(', ') + (s.more ? ' …' : ''))),
+      h('span', { class: 'fn' }, c.fmt(s.count))),
+    s.stack && h('div', { class: 'fstack' }, h('span', {}, s.stack.text), stackLink(x.id))); };
+  const toolRow = (it) => h('div', { class: 'fitem' }, h('button', { type: 'button', class: `frow t${it.status !== 'active' ? ' retired' : ''}`, onclick: () => openTool(it) },
+    h('span', { class: 'fnm' }, h('b', {}, it.name), h('small', {}, [it.brand || 'No brand', it.kind, it.status !== 'active' && 'Retired'].filter(Boolean).join(' · ')),
+      h('small', { class: 'fpath' }, it.place ? c.pathText(r, it).split(' › ').slice(0, -1).join(' › ') : `Loose${it.looseAt ? ' · ' + it.looseAt : ''}`)),
+    h('span', { class: 'fn' }, it.qty ?? '—')));
+  const drawerRow = (k) => { const b = c.getC(r, k.containerId), tools = c.itemsIn(r, k.id); return h('div', { class: 'fitem' },
+    h('button', { type: 'button', class: 'frow d', onclick: () => openBox(k.containerId, k.id) }, h('span', { class: 'fid' }, k.id),
+      h('span', { class: 'fnm' }, h('b', {}, k.name || c.COMP_TYPES[k.type]), h('small', {}, [b.name, c.locationOf(r, b.id)].filter(Boolean).join(' · ')),
+        tools.length > 0 && h('small', { class: 'fpath' }, tools.slice(0, 3).map((t) => t.name).join(', ') + (tools.length > 3 ? ' …' : ''))),
+      h('span', { class: 'fn' }, c.fmt(tools.length)))); };
+  const body = [];
+  for (const x of f.exact) body.push(exactCard(x, f));
+  if (f.exact.length && total === f.exact.length) body.push(h('p', { class: 'small', style: 'margin:0' }, `Nothing else matches “${f.q}”.`));
+  body.push(group('b', 'Boxes', f.boxes, boxRow, expand('b')),
+    group('t', 'Tools', f.tools, toolRow, () => { addRecent(S.find); S.q = S.find.trim(); S.f = { tier: '', location: '', warranty: '' }; S.view = 'items'; S.scroll.i = 0; setFind(''); render(); scrollTo(0, 0); }),
+    group('d', 'Drawers', f.drawers, drawerRow, expand('d')));
+  if (!total) {
+    const n = c.nothingFound(r, f);
+    body.push(h('div', { class: 'panel none' }, h('h3', {}, n.title), h('p', {}, n.text),
+      f.retiredHidden > 0 && h('p', {}, `${nOf(f.retiredHidden, 'retired match', 'retired matches')} left out.`),
+      h('div', { class: 'row' }, n.open && h('button', { type: 'button', class: 'key go', onclick: () => openBox(n.open) }, `Open ${n.open}`),
+        f.retiredHidden > 0 && h('button', { type: 'button', class: 'key', onclick: () => { S.findRetired = true; $('findRetired').checked = true; render(); } }, 'Include retired'),
+        h('button', { type: 'button', class: 'key', onclick: clearFind }, 'Clear Find'))));
+  }
+  const state = !total ? 'Nothing found' : f.exact.length === 1 && total === 1 ? `Box ${f.exact[0].id}` : `${c.fmt(total)} found`;
+  return h('section', { class: 'tier' },
+    h('div', { class: 'tier-h' }, h('h2', {}, 'Find'), h('span', { class: 'tier-d' }, f.number ? 'Box numbers, tools, boxes and drawers' : 'Tools, boxes and drawers'), h('span', { class: `tier-s ${total ? 'ok' : 'idle'}` }, state)),
+    h('div', { class: 'pad', style: 'gap:13px' }, ...body));
+}
+fi.oninput = () => { S.find = fi.value; S.findOpen = {}; S.fromFind = ''; syncFindBar(); render(); };
+fi.onfocus = syncFindBar;
+fi.onblur = () => { $('recent').hidden = true; };
+fi.onkeydown = (e) => {
+  if (e.key === 'Escape' && S.find) { e.preventDefault(); clearFind(); }
+  else if (e.key === 'Enter' && S.find.trim()) { const f = c.find(rec(), S.find, { retired: S.findRetired }); addRecent(S.find); if (f.exact.length === 1) openBox(f.exact[0].id); }
+};
+$('findClr').onclick = clearFind;
+$('findRetired').onchange = (e) => { S.findRetired = e.target.checked; render(); };
+// TC-R150: / puts the cursor in Find, unless you're typing somewhere else
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || !rec() || $('dlg').open) return;
+  const t = e.target; if (t.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+  e.preventDefault(); fi.focus(); fi.select();
+});
+addEventListener('hashchange', () => { const id = c.askedId(location.hash); if (id) { S.asked = id; render(); } });
 
 // ---- first open (TC-S01, TC-R103) ----
 function startView() {
@@ -232,6 +364,7 @@ function startView() {
   };
   const fileIn = h('input', { type: 'file', accept: '.csv,.json,text/csv,application/json', hidden: true, onchange: (e) => openFile(e.target.files[0], () => begin(() => {})) });
   return area(1, 'Get started', S.phone ? 'Look things up here' : 'Name your boxes, then fill them', 'Nothing recorded yet', 'idle',
+    S.asked && askedStrip(),
     S.phone ? h('div', { class: 'stack' },
       h('p', { class: 'small', style: 'margin:0' }, 'Your record is built on a computer or iPad. Read it here from your GitHub repo, or open a backup saved there.'),
       h('div', { class: 'choices' },
@@ -264,7 +397,7 @@ function boxesView() {
     rows.push({ g: true, el: () => ghead('b', g.name, g.rows.length, fo, () => fold('b', g.name)) });
     if (!fo) for (const x of g.rows) rows.push({ el: () => {
       const n = c.itemsIn(r, x.id, true).length, ks = c.compsOf(r, x.id).length;
-      return h('button', { type: 'button', class: `brow${x.id === S.box ? ' sel' : ''}${x.status === 'retired' ? ' retired' : ''}`, onclick: () => { S.box = x.id; S.place = ''; S.tick = null; dropPhoto(); render(); } },
+      return h('button', { type: 'button', class: `brow${x.id === S.box ? ' sel' : ''}${x.status === 'retired' ? ' retired' : ''}`, onclick: () => { S.box = x.id; S.place = ''; S.mark = ''; S.tick = null; dropPhoto(); render(); } },
         h('span', { class: 'bid' }, x.id), h('span', { class: 'bnm' }, h('b', {}, x.name || 'No name'), h('small', {}, [c.modelName(x) || x.kindOfBox, ks ? `${ks} ${ks === 1 ? 'compartment' : 'compartments'}` : x.kind, x.modelFrom === 'catalog' && c.takesModel(x) ? 'check model' : '', x.status === 'retired' ? 'Retired' : ''].filter(Boolean).join(' · '))), h('span', { class: 'bn' }, c.fmt(n)));
     } });
   }
@@ -275,7 +408,7 @@ function boxesView() {
       S.low && h('div', { class: 'health warn' }, h('b', {}, 'Storage is running low'), h('span', {}, 'This browser says it may clear site data to make room. Export a backup now.'), h('button', { type: 'button', class: 'key', onclick: exportBackup }, 'Export backup')),
       !S.phone && sinceBackup >= c.BACKUP_EVERY && h('div', { class: 'health warn' }, h('b', {}, `${c.fmt(sinceBackup)} changes since your last backup`), h('span', {}, 'Your record lives only in this browser. A backup keeps it safe if site data is cleared.'), h('button', { type: 'button', class: 'key', onclick: exportBackup }, 'Export backup')),
       h('div', { class: 'fbar' },
-        searchBox(S.boxQ, 'Find a box by ID, name or tool', (v) => { S.boxQ = v; S.scroll.b = 0; render(); requestAnimationFrame(() => { const i = $('boxQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'boxQ'),
+        searchBox(S.boxQ, 'Filter this list', (v) => { S.boxQ = v; S.scroll.b = 0; render(); requestAnimationFrame(() => { const i = $('boxQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'boxQ'),
         pick('Group', S.boxGroup, [['location', 'Location'], ['kind', 'Kind of box'], ['none', 'None']], (v) => { S.boxGroup = v; render(); }),
         h('span', { class: 'count' }, h('b', {}, c.fmt(shown.length)), ' of ', h('b', {}, c.fmt(r.containers.length)), ' boxes')),
       rows.length ? vlist('b', rows) : h('div', { class: 'empty' }, h('b', {}, S.boxQ ? `No boxes match “${S.boxQ}”` : 'No boxes yet'), h('span', {}, S.boxQ ? 'Searched IDs, names, locations and the tools inside.' : 'Add a box, or import a list in Record.'),
@@ -304,7 +437,8 @@ function boxDetail() {
   return h('section', { class: 'tier detailcol' },
     h('div', { class: 'tier-h' }, h('span', { class: 'n' }, 2), h('h2', { class: 'mono' }, x.id), h('span', { class: 'tier-d' }, [x.kindOfBox, w.location].filter(Boolean).join(' · ')), h('span', { class: `tier-s ${x.status === 'retired' ? 'idle' : 'ok'}` }, x.status === 'retired' ? 'Retired' : nOf(total, 'tool'))),
     h('div', { class: 'pad' },
-      h('button', { type: 'button', class: 'backlink', onclick: () => { S.box = ''; S.tick = null; dropPhoto(); render(); } }, '‹ Boxes'),
+      S.fromFind ? h('button', { type: 'button', class: 'key', style: 'align-self:flex-start', onclick: backToFind }, `‹ Results for “${S.fromFind}”`)
+        : h('button', { type: 'button', class: 'backlink', onclick: () => { S.box = ''; S.tick = null; dropPhoto(); render(); } }, '‹ Boxes'),
       h('dl', { class: 'read' },
         rd('Name', x.name || 'No name'), rd('Kind of box', x.kindOfBox), c.takesModel(x) && rd('Systainer model', modelLine(x)), rd('Location', [w.location, ...w.via].filter(Boolean).join(' · on ') || 'Not set'),
         rd('Sits on', x.sitsOn || 'Nothing'), rd('Kind', x.kind || '—'), rd('Status', x.status === 'retired' ? 'Retired' : 'Active'),
@@ -337,7 +471,7 @@ function itemList(items, showPath, place) {
     !S.phone && h('span', {}, 'Use Add tools to tick what is in it, or type one.'),
     !S.phone && place && h('button', { type: 'button', class: 'key', onclick: () => itemDialog(null, { place }) }, 'Type a tool'));
   const sorted = items.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  const row = (it) => h('div', { class: 'irow nocheck' },
+  const row = (it) => h('div', { class: `irow nocheck${it.uid === S.mark ? ' mark' : ''}` },
     h('button', { type: 'button', class: 'nm', onclick: () => itemDialog(it.uid) }, h('b', {}, it.name), h('small', {}, [it.brand, showPath ? (it.looseAt || 'Loose') : ''].filter(Boolean).join(' · ') || it.tier)),
     h('span', { class: 'c-brand' }, showPath ? (it.looseAt || 'Loose') : (it.brand || 'No brand')), h('span', { class: 'c-q' }, it.qty ?? '—'), h('span', { class: 'c-war' }, statusSpan(it.warranty)));
   const head = h('div', { class: 'ihead nocheck' }, h('span', {}, 'Tool'), h('span', {}, showPath ? 'Where' : 'Brand'), h('span', { class: 'c-q' }, 'Qty'), h('span', {}, 'Warranty'));
@@ -1020,6 +1154,7 @@ function setFieldDialog() {
 const mq = matchMedia(`(max-width:${c.PHONE_MAX}px)`);
 S.phone = mq.matches;
 mq.addEventListener('change', () => { S.phone = mq.matches; S.sel.clear(); S.tick = null; render(); });
+S.asked = c.askedId(location.hash); // TC-R160
 (async () => {
   try { S.rec = await loadRecord(); if (S.rec) c.ensureKinds(S.rec); } catch { S.saveFailed = true; }
   S.low = (await storageUse()) > 0.9;
