@@ -15,7 +15,7 @@ a{color:inherit;text-decoration-color:var(--strong);text-underline-offset:3px}
 .kit::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-right:5px;vertical-align:.18em}
 .pitch{font-size:var(--t-micro);color:var(--soft)}
 details.alltools{position:relative}
-details.alltools>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:var(--t-micro);font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);border:1px solid var(--strong);border-radius:5px;padding:3px 8px;min-height:24px}
+details.alltools>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:5px;font-size:var(--t-micro);font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);border:1px solid var(--strong);border-radius:5px;padding:3px 8px;min-height:24px}
 details.alltools>summary::-webkit-details-marker{display:none}
 details.alltools>summary::after{content:"▾";color:var(--soft);font-size:var(--t-cap);line-height:1}
 details.alltools[open]>summary{border-color:var(--accent);color:var(--accent-text)}
@@ -292,3 +292,6 @@ dialog fieldset .f{flex:1 1 160px}
 .sugg .nm b{font-weight:500}
 .sugg .nm small{color:var(--soft);font-family:"JetBrains Mono",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:767px){.sugg{grid-template-columns:44px minmax(0,1fr)}.sugg>.st{grid-column:2}}
+
+/* phones: hang the All WOODWERD tools menu from the full-width strip, so it can't run off the left edge */
+@media (max-width:767px){details.alltools,details.kitmenu{position:static}.toolmenu{left:0;right:0;width:auto;max-width:none}}
