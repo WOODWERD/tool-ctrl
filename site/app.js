@@ -41,6 +41,8 @@ const S = {
   gh: null, sync: null, syncState: 'off', syncErr: null, conflict: null, choice: null, ghNote: '', connecting: false, renamedNote: '',
 };
 const rec = () => S.rec;
+// Stack Ctrl writes where boxes sit into this same record; each app tells the other (SC-R06)
+const chan = 'BroadcastChannel' in window ? new BroadcastChannel('tool-ctrl-record') : null;
 const nOf = (n, one, many = one + 's') => `${c.fmt(n)} ${n === 1 ? one : many}`;
 
 // ---------- saving (TC-R96) ----------
@@ -56,7 +58,7 @@ function commit(ch = 'all') {
 async function flush() {
   const ch = all ? 'all' : { containers: [...pending.containers], compartments: [...pending.compartments], items: [...pending.items] };
   pending = { containers: new Set(), compartments: new Set(), items: new Set() }; all = false;
-  try { await saveRecord(rec(), ch); S.saveFailed = false; } catch { S.saveFailed = true; }
+  try { await saveRecord(rec(), ch); S.saveFailed = false; chan?.postMessage({ from: 'tool-ctrl' }); } catch { S.saveFailed = true; }
   S.saving = false; leds();
   later(); // TC-R65: changes go to GitHub a few seconds after the last edit
 }
@@ -1008,3 +1010,10 @@ mq.addEventListener('change', () => { S.phone = mq.matches; S.sel.clear(); S.tic
   render();
   if (S.gh && S.rec) syncNow(); // TC-R65: sync when the app opens
 })();
+// Stack Ctrl moved boxes: take its sitsOn and location into this copy, so a later save here can't put them back
+chan?.addEventListener('message', async (e) => {
+  if (e.data?.from !== 'stack-ctrl' || !S.rec) return;
+  let fresh; try { fresh = await loadRecord(); } catch { return; }
+  for (const id of e.data.ids || []) { const a = c.getC(S.rec, id), b = fresh && c.getC(fresh, id); if (a && b) { a.sitsOn = b.sitsOn; a.location = b.location; } }
+  render(); later();
+});
