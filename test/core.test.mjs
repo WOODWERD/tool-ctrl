@@ -24,7 +24,7 @@ test('TC-A01 importing a Systainer list renumbers to WW and keeps everything', (
   const plan = c.planImport(r, SAMPLE, { renumberTo: 'WW' });
   assert.equal(plan.boxes.length, 3); assert.equal(plan.skipped.length, 0);
   assert.deepEqual(plan.renumbered[0], ['ST-001', 'WW-001']);
-  assert.deepEqual(plan.kept, ['icon', 'systainer', 'label_status']);
+  assert.deepEqual(plan.kept, ['icon', 'label_status']);
   c.applyImport(r, plan);
   assert.deepEqual(r.containers.map((x) => x.id), ['WW-001', 'WW-002', 'WW-003']);
   const b = c.getC(r, 'WW-002');
@@ -425,4 +425,75 @@ test('TC-A34 to TC-A37 against a real export, when one is given', { skip: !proce
   assert.equal(r.items.length, plan.rows);
   assert.equal(c.planWarranty(r, text, CATALOG).add.length, 0);
   console.log(`  real export: ${plan.rows} rows, ${plan.matched} matched, ${plan.noDates} without dates`);
+});
+
+// ---------- Systainer models (TC-R130 to TC-R144) ----------
+test('TC-A43 a Systainer box takes a model from the list', () => {
+  const r = fresh();
+  const b = c.addContainer(r, { name: 'DOMINO', kindOfBox: 'Systainer' });
+  assert.ok(c.setModel(r, b.id, 'sys3-m-187'));
+  const m = c.getModel(b.model);
+  assert.deepEqual([b.model, m.name, m.w, m.d, m.h], ['sys3-m-187', 'SYS3 M 187', 396, 296, 187]);
+  assert.equal(c.modelName(b), 'SYS3 M 187');
+});
+test('TC-A44 the picker finds old names', () => {
+  const names = c.findModels('sys 2').map((m) => m.name);
+  assert.deepEqual(names, ['SYS 2 TL', 'SYS 2 TL-DF', 'Systainer Classic 2']);
+  assert.ok(c.findModels('sys 2').every((m) => !m.sold));
+  assert.deepEqual(c.findModels('T-Loc III').map((m) => m.name), ['SYS 3 TL']);
+  assert.equal(c.findModels('m187')[0].name, 'SYS3 M 187');
+});
+test('TC-A45 a tool in its own new box takes the Systainer it ships in, marked from the catalog', () => {
+  const r = fresh();
+  const { box } = c.toolInNewBox(r, { name: 'ETS 125', brand: 'Festool', kind: 'Random orbital sander', tier: 'power' });
+  assert.deepEqual([box.model, box.modelFrom], ['sys3-m-187', 'catalog']);
+  const other = c.toolInNewBox(r, { name: 'M18 FTR', brand: 'Milwaukee', kind: 'Trim router', tier: 'power' }).box;
+  assert.equal(other.model || '', '');
+});
+test('TC-A46 confirming clears the from-catalog mark', () => {
+  const r = fresh();
+  const { box } = c.toolInNewBox(r, { name: 'TS 55 F', brand: 'Festool', kind: 'Track saw', tier: 'power' });
+  c.confirmModel(r, box.id);
+  assert.deepEqual([box.model, box.modelFrom], ['sys3-m-337', '']);
+});
+test('TC-A47 a Sortainer model knows its drawers', () => {
+  assert.equal(c.getModel('sys3-sort3-m-337').drawers, 3);
+  assert.equal(c.getModel('sys3-m-187').drawers, 0);
+});
+test('TC-A48 one model on several boxes skips kinds that take none, and undoes', () => {
+  const r = fresh();
+  const ids = [1, 2, 3, 4, 5].map(() => c.addContainer(r, { name: 'BOX', kindOfBox: 'Systainer' }).id);
+  const bag = c.addContainer(r, { name: 'BAG', kindOfBox: 'Bag' }).id;
+  const res = c.setModelMany(r, [...ids, bag], 'sys3-m-237');
+  assert.equal(res.set.length, 5); assert.deepEqual(res.skipped, [bag]);
+  assert.ok(ids.every((id) => c.getC(r, id).model === 'sys3-m-237'));
+  res.undo();
+  assert.ok(ids.every((id) => !c.getC(r, id).model));
+});
+test('TC-A49 import reads a Systainer column by any name and keeps what it cannot match', () => {
+  const csv = 'id,name,size\nST-001,A,M 187\nST-002,B,SYS 4 TL\nST-003,C,Big one\n';
+  const r = fresh(), plan = c.planImport(r, csv, { renumberTo: 'WW' });
+  assert.deepEqual(plan.boxes.map((b) => b.model), ['sys3-m-187', 'sys-4-tl', '']);
+  assert.deepEqual(plan.modelMissed, [{ line: 4, value: 'Big one' }]);
+  c.applyImport(r, plan);
+  assert.equal(c.getC(r, 'WW-003').kept.size, 'Big one');
+  assert.equal(c.getC(r, 'WW-001').model, 'sys3-m-187');
+});
+test('TC-E16 a kind that takes no model hides it and keeps it', () => {
+  const r = fresh();
+  const b = c.addContainer(r, { name: 'X', kindOfBox: 'Systainer' });
+  c.setModel(r, b.id, 'sys3-m-137'); b.kindOfBox = 'Bag';
+  assert.equal(c.modelName(b), ''); b.kindOfBox = 'Systainer';
+  assert.equal(c.modelName(b), 'SYS3 M 137');
+});
+test('TC-R135 a box not on the list keeps a typed name and height', () => {
+  const r = fresh();
+  const b = c.addContainer(r, { name: 'X', kindOfBox: 'Systainer' });
+  c.setModel(r, b.id, 'other', { other: { name: 'Mafell MAX', h: 250 } });
+  assert.deepEqual([c.modelName(b), b.modelOther.h], ['Mafell MAX', 250]);
+});
+test('TC-R143 older records gain the new kinds of box', () => {
+  const r = fresh(); r.meta.kinds = ['Systainer', 'Bag'];
+  c.ensureKinds(r);
+  assert.deepEqual(r.meta.kinds, ['Systainer', 'Bag', 'Systainer tool', 'Cart']);
 });

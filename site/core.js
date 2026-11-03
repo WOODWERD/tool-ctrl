@@ -1,9 +1,11 @@
 // Tool Ctrl rules. No page code here: everything in this file is tested by TC-A ID.
+import { SYSTAINERS, SHIPS_IN } from './systainers.js';
 
 export const LIMITS = { name: 20, kind: 28, serial: 40, compName: 20, prefix: 4, id: 12, qty: 999, compN: 99, number: 999 };
 export const COMP_TYPES = { D: 'Drawer', T: 'Tray', B: 'Bin' };
 export const TIERS = ['Power', 'Hand', 'Consumable'];
-export const KINDS_OF_BOX = ['Systainer', 'Sortainer', 'Systainer drawer unit', 'Packout', 'TSTAK', 'Tool chest', 'Bag', 'Bin'];
+export const KINDS_OF_BOX = ['Systainer', 'Sortainer', 'Systainer drawer unit', 'Systainer tool', 'Cart', 'Packout', 'TSTAK', 'Tool chest', 'Bag', 'Bin'];
+export const MODEL_KINDS = ['Systainer', 'Sortainer', 'Systainer drawer unit', 'Systainer tool', 'Cart']; // TC-R130
 export const PHONE_MAX = 767; // TC-R100: under 768 px is a phone
 export const SOON_DAYS = 90; // TC-R84
 export const BACKUP_EVERY = 20; // TC-E04
@@ -183,6 +185,8 @@ export function splitOne(rec, uid) {
 const TIER_OF = { power: 'Power', hand: 'Hand', consumable: 'Consumable' };
 export function toolInNewBox(rec, t, { kindOfBox = 'Systainer', location = '' } = {}) {
   const box = addContainer(rec, { name: t.name.toUpperCase(), kind: t.kind, kindOfBox, location });
+  const ships = t.brand === 'Festool' && SHIPS_IN[t.name]; // TC-R137
+  if (ships && takesModel(box)) setModel(rec, box.id, ships, { fromCatalog: true });
   const tier = TIER_OF[t.tier] || 'Power';
   const items = [addItem(rec, { name: t.name, brand: t.brand, kind: t.kind, tier, place: box.id, source: 'Catalog' }),
     ...[t.c1, t.c2].filter(Boolean).map((line) => addItem(rec, { name: line, tier, place: box.id, source: 'Catalog' }))];
@@ -278,7 +282,7 @@ export function itemText(rec, it) {
   const p = placeParts(rec, it.place, it.looseAt);
   return `${it.name} ${it.brand} ${it.kind} ${it.notes} ${it.warranty?.serial || ''} ${p.label} ${p.location} ${p.via.join(' ')}`.toLowerCase();
 }
-export const containerText = (rec, c) => `${c.id} ${c.name} ${c.kind} ${c.kindOfBox} ${locationOf(rec, c.id)} ${c.notes}`.toLowerCase();
+export const containerText = (rec, c) => `${c.id} ${c.name} ${c.kind} ${c.kindOfBox} ${modelName(c)} ${locationOf(rec, c.id)} ${c.notes}`.toLowerCase();
 
 export function search(rec, q) {
   const w = words(q);
@@ -394,7 +398,8 @@ export const toCsv = (rows) => rows.map((r) => r.map(cell).join(',')).join('\r\n
 // ---------- import (TC-R50, TC-R50a, TC-E01) ----------
 const MAKER = { festool: 'Festool', milwaukee: 'Milwaukee', dewalt: 'DEWALT', bosch: 'Bosch', makita: 'Makita', wera: 'Wera', knipex: 'Knipex' };
 const tierOf = (t) => ({ power: 'Power', hand: 'Hand', consumable: 'Consumable', consumables: 'Consumable' }[String(t).toLowerCase()] || 'Power');
-const KNOWN = ['id', 'name', 'kind', 'contents', 'contents 1', 'contents 2', 'location', 'notes', 'tier', 'palette', 'group', 'kind of box', 'kind_of_box', 'model'];
+const KNOWN = ['id', 'name', 'kind', 'contents', 'contents 1', 'contents 2', 'location', 'notes', 'tier', 'palette', 'group', 'kind of box', 'kind_of_box', 'model', 'size', 'systainer', 'systainer model'];
+const MODEL_COLS = ['systainer model', 'systainer', 'size']; // TC-R141: `model` already names the tool (TC-R50)
 
 // Reads a list into a plan; nothing changes until applyImport. renumberTo swaps the prefix and keeps each number;
 // closeGaps numbers the renumbered boxes in order with no gaps instead, so ST-200 can follow ST-063 (TC-R50b).
@@ -406,7 +411,7 @@ export function planImport(rec, text, { renumberTo = '', kindOfBox = 'Systainer'
   if (col('name') < 0) return { error: 'That file has no Name column.' };
   const kept = head.filter((h) => h && !KNOWN.includes(h));
   const used = new Set(rec.containers.map((c) => c.id));
-  const plan = { boxes: [], skipped: [], kept, items: 0, renumbered: [], gaps: false };
+  const plan = { boxes: [], skipped: [], kept, items: 0, renumbered: [], gaps: false, modelMissed: [] };
   // TC-R50b: the new number for each old ID, in order of the old numbers
   const order = new Map();
   if (renumberTo) {
@@ -431,8 +436,11 @@ export function planImport(rec, text, { renumberTo = '', kindOfBox = 'Systainer'
     const tier = tierOf(get('tier'));
     const items = [{ name: get('model') || name, brand, kind: get('kind'), tier }, ...contents.map((x) => x.trim()).filter(Boolean).map((x) => ({ name: x, brand: '', kind: '', tier }))];
     const keptVals = {}; for (const k of kept) keptVals[k] = r[head.indexOf(k)] ?? '';
+    const mcol = MODEL_COLS.find((m) => col(m) >= 0), mval = mcol ? get(mcol) : '';
+    const model = mval ? findModel(mval) : null;
+    if (mval && !model) { keptVals[mcol] = mval; plan.modelMissed.push({ line, value: mval }); }
     plan.boxes.push({ id: p ? p.container : '', prefix: p ? p.prefix : '', n: p ? p.n : 0, name, kind: get('kind'), location: get('location'), notes: [get('notes'), old && `Was ${old}`].filter(Boolean).join(' · '),
-      kindOfBox: get('kind of box') || get('kind_of_box') || kindOfBox, kept: keptVals, items });
+      kindOfBox: get('kind of box') || get('kind_of_box') || kindOfBox, kept: keptVals, items, model: model ? model.id : '' });
     plan.items += items.length;
   });
   return plan;
@@ -440,6 +448,7 @@ export function planImport(rec, text, { renumberTo = '', kindOfBox = 'Systainer'
 export function applyImport(rec, plan) {
   for (const b of plan.boxes) {
     const c = addContainer(rec, { ...b, prefix: b.prefix || rec.meta.prefix, n: b.n || undefined });
+    if (b.model && takesModel(c)) c.model = b.model;
     if (!rec.meta.prefixes.includes(c.prefix)) rec.meta.prefixes.push(c.prefix);
     for (const it of b.items) addItem(rec, { ...it, place: c.id, source: 'Typed' });
   }
@@ -578,13 +587,60 @@ export function undoWarranty(rec, u) {
 }
 
 // TC-R54: the backup holds everything. It never holds a token (TC-R62).
+// ---------- Systainer models (TC-R130 to TC-R144) ----------
+const mnorm = (s) => String(s || "").toLowerCase().replace(/³/g, "3").replace(/[^a-z0-9/]/g, "");
+const BY_ID = new Map(SYSTAINERS.map((m) => [m.id, m]));
+export const getModel = (id) => BY_ID.get(id) || null;
+export const takesModel = (c) => MODEL_KINDS.includes(c.kindOfBox);
+// The model's name for a box, or the typed one for Not listed (TC-R135); '' when none or the kind doesn't take one (TC-E16)
+export function modelName(c) {
+  if (!c || !takesModel(c)) return '';
+  if (c.model === 'other') return c.modelOther?.name || 'Not listed';
+  return getModel(c.model)?.name || '';
+}
+// TC-R134: any of a model's names, in any case, with or without spaces
+export function findModels(q) {
+  const w = String(q || '').toLowerCase().split(/\s+/).filter(Boolean).map(mnorm);
+  if (!w.length) return SYSTAINERS.slice();
+  const text = (m) => [m.name, ...m.aka].map(mnorm).join('|'), all = mnorm(q);
+  const whole = SYSTAINERS.filter((m) => text(m).includes(all));
+  return whole.length ? whole : SYSTAINERS.filter((m) => w.every((x) => text(m).includes(x)));
+}
+export function findModel(v) {
+  const n = mnorm(v);
+  return SYSTAINERS.find((m) => [m.name, ...m.aka].some((a) => mnorm(a) === n)) || null;
+}
+// TC-R130, TC-R138: set or clear a box's model. A model from the catalog is marked until confirmed.
+export function setModel(rec, cid, modelId, { fromCatalog = false, other = null } = {}) {
+  const c = getC(rec, cid);
+  if (!c || !takesModel(c)) return false;
+  if (modelId === 'other') { c.model = 'other'; c.modelOther = { name: clip(other?.name, LIMITS.kind), h: Math.max(0, Math.round(+other?.h || 0)) }; }
+  else { c.model = modelId && getModel(modelId) ? modelId : ''; delete c.modelOther; }
+  c.modelFrom = fromCatalog && c.model ? 'catalog' : '';
+  return true;
+}
+export function confirmModel(rec, cid) { const c = getC(rec, cid); if (c) c.modelFrom = ''; }
+// TC-R139: one model on several boxes; kinds that don't take a model are skipped and counted
+export function setModelMany(rec, ids, modelId) {
+  const res = { set: [], skipped: [] }, before = ids.map((id) => { const c = getC(rec, id); return [id, c && { model: c.model, modelFrom: c.modelFrom, modelOther: c.modelOther }]; });
+  for (const id of ids) (setModel(rec, id, modelId) ? res.set : res.skipped).push(id);
+  res.undo = () => { for (const [id, b] of before) { const c = getC(rec, id); if (c && b) Object.assign(c, b); } };
+  return res;
+}
+// TC-R130: older records gain the new kinds of box
+export function ensureKinds(rec) {
+  const k = rec.meta.kinds || (rec.meta.kinds = []);
+  for (const x of ['Systainer tool', 'Cart']) if (!k.includes(x)) k.push(x);
+  return rec;
+}
+
 export const BACKUP_KIND = 'tool-ctrl-record';
 export const writeBackup = (rec, d = new Date()) => JSON.stringify({ kind: BACKUP_KIND, version: 1, saved: d.toISOString(), record: rec });
 export function readBackup(text) {
   let o; try { o = JSON.parse(text); } catch { return { error: "That file isn't a Tool Ctrl backup." }; }
   if (!o || o.kind !== BACKUP_KIND || !o.record || !Array.isArray(o.record.containers) || !Array.isArray(o.record.items)) return { error: "That file isn't a Tool Ctrl backup." };
   const r = o.record;
-  r.compartments ||= []; r.meta = { ...emptyRecord().meta, ...r.meta };
+  r.compartments ||= []; r.meta = { ...emptyRecord().meta, ...r.meta }; ensureKinds(r);
   return { record: r };
 }
 

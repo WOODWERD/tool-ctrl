@@ -6,6 +6,7 @@ import { loadRecord, saveRecord, storageUse, askToKeep, loadSync, saveSync } fro
 import { client, repoError } from './github.js';
 import { syncOnce, waiting } from './sync.js';
 import { tickList as catalogList } from './catalog.js';
+import { SYSTAINERS, GENERATIONS, SHIPS_IN } from './systainers.js';
 
 const $ = (id) => document.getElementById(id);
 // h('div', {class: 'x', onclick: fn}, 'text', child): every string goes in as text, never as markup
@@ -33,7 +34,7 @@ const GH = () => (matchMedia('(pointer:coarse)').matches ? 44 : 34), ROW = 48;
 
 const S = {
   rec: null, view: 'boxes', box: '', place: '', tick: null, tickBrand: 'All', tickQ: '', tickCons: false, tickAdded: [], tickNew: false, tickKob: 'Systainer',
-  boxQ: '', boxGroup: 'location', fold: {}, scroll: {},
+  boxQ: '', boxGroup: 'location', fold: {}, scroll: {}, modelPick: '', modelQ: '', modelSel: '',
   q: '', f: { tier: '', location: '', warranty: '' }, by: 'box', sort: 'name', sel: new Set(),
   warF: '', warQ: '', warSel: '', plan: null, planFile: '', renumber: true, closeGaps: false, kindOfBox: 'Systainer', drawerRows: true, over: null, note: '',
   undo: null, phone: false, low: false, saving: false, saveFailed: false,
@@ -262,7 +263,7 @@ function boxesView() {
     if (!fo) for (const x of g.rows) rows.push({ el: () => {
       const n = c.itemsIn(r, x.id, true).length, ks = c.compsOf(r, x.id).length;
       return h('button', { type: 'button', class: `brow${x.id === S.box ? ' sel' : ''}${x.status === 'retired' ? ' retired' : ''}`, onclick: () => { S.box = x.id; S.place = ''; S.tick = null; dropPhoto(); render(); } },
-        h('span', { class: 'bid' }, x.id), h('span', { class: 'bnm' }, h('b', {}, x.name || 'No name'), h('small', {}, [x.kindOfBox, ks ? `${ks} ${ks === 1 ? 'compartment' : 'compartments'}` : x.kind, x.status === 'retired' ? 'Retired' : ''].filter(Boolean).join(' · '))), h('span', { class: 'bn' }, c.fmt(n)));
+        h('span', { class: 'bid' }, x.id), h('span', { class: 'bnm' }, h('b', {}, x.name || 'No name'), h('small', {}, [c.modelName(x) || x.kindOfBox, ks ? `${ks} ${ks === 1 ? 'compartment' : 'compartments'}` : x.kind, x.modelFrom === 'catalog' && c.takesModel(x) ? 'check model' : '', x.status === 'retired' ? 'Retired' : ''].filter(Boolean).join(' · '))), h('span', { class: 'bn' }, c.fmt(n)));
     } });
   }
   const sinceBackup = r.meta.changes - (r.meta.backupAt || 0);
@@ -277,7 +278,8 @@ function boxesView() {
         h('span', { class: 'count' }, h('b', {}, c.fmt(shown.length)), ' of ', h('b', {}, c.fmt(r.containers.length)), ' boxes')),
       rows.length ? vlist('b', rows) : h('div', { class: 'empty' }, h('b', {}, S.boxQ ? `No boxes match “${S.boxQ}”` : 'No boxes yet'), h('span', {}, S.boxQ ? 'Searched IDs, names, locations and the tools inside.' : 'Add a box, or import a list in Record.'),
         S.boxQ && h('button', { type: 'button', class: 'key', onclick: () => { S.boxQ = ''; render(); } }, 'Clear search')),
-      h('div', { class: 'row edit' }, h('button', { type: 'button', class: 'key', onclick: () => boxDialog() }, 'Add box'), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; S.tickNew = true; S.tickAdded = []; if (S.tickBrand === MY) S.tickBrand = 'All'; render(); } }, 'Add standard tools'))));
+      h('div', { class: 'row edit' }, h('button', { type: 'button', class: 'key', onclick: () => boxDialog() }, 'Add box'),
+        S.boxQ && shown.length > 1 && h('button', { type: 'button', class: 'key', onclick: () => modelManyDialog(shown.map((x) => x.id)) }, `Set Systainer model on these ${c.fmt(shown.length)}`), h('button', { type: 'button', class: 'key', onclick: () => { S.box = ''; S.tick = 'loose'; S.tickNew = true; S.tickAdded = []; if (S.tickBrand === MY) S.tickBrand = 'All'; render(); } }, 'Add standard tools'))));
   return h('div', { class: 'split' }, list, S.tick === 'loose' && !S.box ? tickPanel('loose') : S.box ? boxDetail() : looseArea());
 }
 
@@ -301,13 +303,18 @@ function boxDetail() {
     h('div', { class: 'pad' },
       h('button', { type: 'button', class: 'backlink', onclick: () => { S.box = ''; S.tick = null; dropPhoto(); render(); } }, '‹ Boxes'),
       h('dl', { class: 'read' },
-        rd('Name', x.name || 'No name'), rd('Kind of box', x.kindOfBox), rd('Location', [w.location, ...w.via].filter(Boolean).join(' · on ') || 'Not set'),
+        rd('Name', x.name || 'No name'), rd('Kind of box', x.kindOfBox), c.takesModel(x) && rd('Systainer model', modelLine(x)), rd('Location', [w.location, ...w.via].filter(Boolean).join(' · on ') || 'Not set'),
         rd('Sits on', x.sitsOn || 'Nothing'), rd('Kind', x.kind || '—'), rd('Status', x.status === 'retired' ? 'Retired' : 'Active'),
         x.notes && rd('Notes', x.notes)),
+      c.takesModel(x) && x.model && x.model !== 'other' && x.modelFrom === 'catalog' && h('div', { class: 'health warn' }, h('b', {}, `Ships in ${c.modelName(x)}. Check your box`),
+        h('span', {}, 'Filled from the catalog when this box was made for its tool. A different set, or one bought before 2019, may have come in another Systainer.'),
+        h('button', { type: 'button', class: 'key edit', onclick: () => change(() => c.confirmModel(rec(), x.id), { containers: [x.id] }) }, "It's right")),
+      S.modelPick === x.id && !S.phone ? modelPanel(x) : null,
       x.status === 'active' && h('div', { class: 'row edit' },
         h('button', { type: 'button', class: 'key go', onclick: () => { S.tick = S.place; S.tickAdded = []; S.tickNew = false; S.tickBrand = c.myTools(rec(), S.place).length ? MY : 'All'; render(); } }, icon('plus'), 'Add tools'),
         h('button', { type: 'button', class: 'key', onclick: () => { S.tick = null; S.photo = { place: S.place, state: 'pick' }; render(); } }, h('span', { html: ICON.camera, style: 'display:inline-flex' }), 'Read from photo'),
         h('button', { type: 'button', class: 'key', onclick: () => drawersDialog(x.id) }, 'Add drawers'),
+        c.takesModel(x) && h('button', { type: 'button', class: 'key', onclick: () => { S.modelPick = x.id; S.modelQ = ''; S.modelSel = x.model || ''; S.tick = null; dropPhoto(); render(); } }, 'Systainer model'),
         h('button', { type: 'button', class: 'key', onclick: () => boxDialog(x.id) }, 'Edit box'),
         h('span', { class: 'sp' }),
         h('button', { type: 'button', class: 'key', onclick: () => retireDialog(x.id) }, 'Retire')),
@@ -594,8 +601,9 @@ function githubArea() {
     const auth = !!S.gh;
     const f = h('form', { class: 'stack', onsubmit: (e) => { e.preventDefault(); connect(auth ? S.gh.repo : e.target.repo.value, e.target.token.value); } },
       !auth && h('p', { class: 'small', style: 'margin:0' }, 'Keep your record in a private repo of your own, to sync it between devices and keep a history of every change. Make the repo private on GitHub, then a fine-grained token for that one repo.'),
+      !auth && h('p', { class: 'small', style: 'margin:0' }, 'New to GitHub? Follow ', h('a', { href: 'https://woodwerd.github.io/box-ctrl/github.html', target: '_blank', rel: 'noopener noreferrer' }, 'Set up GitHub'), ', step by step.'),
       auth ? h('div', { class: 'health bad' }, h('b', {}, 'GitHub refused the token'), h('span', {}, `${S.syncErr.text.replace(/^GitHub refused the token\. /, '')} ${(() => { const n = waiting(S.sync?.base, rec()); return n ? `${nOf(n, 'change')} ${n === 1 ? 'is' : 'are'} waiting on this device; nothing is lost.` : ''; })()}`))
-        : h('label', { class: 'f' }, h('span', {}, 'Repo · owner/name'), h('input', { class: 'in m', name: 'repo', autocomplete: 'off', spellcheck: 'false', placeholder: 'owner/tool-record', value: loadConn()?.repo || '' })),
+        : h('label', { class: 'f' }, h('span', {}, 'Repo · owner/name'), h('input', { class: 'in m', name: 'repo', autocomplete: 'off', spellcheck: 'false', placeholder: 'owner/ctrl-data', value: loadConn()?.repo || '' })),
       h('label', { class: 'f' }, h('span', {}, S.phone ? 'Token · Contents read only is enough here' : 'Token · Contents read and write, this repo only'), h('input', { class: `in m${auth ? ' bad' : ''}`, name: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false' })),
       S.ghNote && h('div', { class: 'health bad' }, h('b', {}, 'Not connected'), h('span', {}, S.ghNote)),
       h('div', { class: 'row' }, h('button', { type: 'submit', class: auth ? 'key go' : 'key connect', disabled: S.connecting }, S.connecting ? 'Connecting…' : auth ? 'Save token and sync' : 'Connect'),
@@ -700,6 +708,7 @@ function planPanel() {
     rn.length > 0 && h('div', { class: 'list' }, [rn[0], ...rn.filter(([a], i) => i > 0 && c.parseId(a).n !== c.parseId(rn[i - 1][0]).n + 1).slice(0, 4), rn[rn.length - 1]].filter((x, i, arr) => arr.indexOf(x) === i).map(([a, b]) => h('div', { class: 'crow', style: 'cursor:default' }, h('span', { class: 'cid' }, a), h('span', { class: 'mono' }, `→ ${b}`), h('span', {})))),
     h('label', { class: 'f', style: 'flex:0 1 auto' }, h('span', {}, 'Kind of box, where the file doesn\'t say'), h('select', { class: 'pick', onchange: (e) => { S.kindOfBox = e.target.value; replan(); } }, m.kinds.map((k) => h('option', { value: k, selected: k === S.kindOfBox }, k)))),
     p.kept.length > 0 && h('p', { class: 'small', style: 'margin:0' }, `Kept with each box, not shown: ${p.kept.join(', ')}.`),
+    p.modelMissed?.length > 0 && h('p', { class: 'small', style: 'margin:0' }, `Model not matched on ${nOf(p.modelMissed.length, 'row')}: ${p.modelMissed.slice(0, 3).map((x) => `row ${x.line}, ${x.value}`).join(' · ')}${p.modelMissed.length > 3 ? ' and more' : ''}. The value is kept with the box; pick its model after.`),
     p.skipped.length > 0 && h('ul', { class: 'hist' }, p.skipped.slice(0, 12).map((s) => h('li', {}, `Row ${s.line}: ${s.why}`)), p.skipped.length > 12 && h('li', {}, `and ${p.skipped.length - 12} more`)),
     h('p', { class: 'small', style: 'margin:0' }, `Each box keeps its old ID in its notes. The next new box will be ${(() => { const t = c.emptyRecord(); t.meta = { ...m, counters: { ...m.counters } }; t.containers = [...rec().containers, ...p.boxes.map((b) => ({ prefix: b.prefix || m.prefix, n: b.n }))]; return c.nextId(t); })()}.`),
     h('div', { class: 'row' }, h('button', { type: 'button', class: 'key go', disabled: !p.boxes.length, onclick: () => {
@@ -794,11 +803,11 @@ function boxDialog(id) {
     change(() => {}, x ? 'all' : { containers: [box.id] });
   });
 }
-function drawersDialog(cid) {
+function drawersDialog(cid, count = 3) {
   let type = 'D';
   const seg = h('div', { class: 'segc', role: 'group', 'aria-label': 'Kind' }, Object.entries(c.COMP_TYPES).map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(k === type), onclick: (e) => { type = k; seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.target))); } }, t)));
   openDialog(`Add compartments to ${cid}`, [seg,
-    h('div', { class: 'row' }, field('How many', inp('n', 3, { type: 'number', min: 1, max: 99, inputmode: 'numeric' }))),
+    h('div', { class: 'row' }, field('How many', inp('n', count, { type: 'number', min: 1, max: 99, inputmode: 'numeric' }))),
     field('Names, one per line, optional · up to 20 each', h('textarea', { class: 'in', name: 'names', placeholder: 'Pliers and cutters\nSockets 1/4 in' })),
     h('p', { class: 'small', style: 'margin:0' }, 'Drawers count from the top. Ones already numbered keep their numbers.')], (f) => {
     const n = Math.min(99, Math.max(1, parseInt(f.n.value, 10) || 1));
@@ -887,6 +896,91 @@ function moveDialog() {
     offerUndo(`Moved ${undo.length} ${undo.length === 1 ? 'tool' : 'tools'} to ${to || 'Loose'}`, () => c.undoMove(r, undo));
   }, 'Move');
 }
+// ---- Systainer model (TC-S16) ----
+const BOX_W = { M: 396, L: 508, MIDI: 496, XXL: 792, MAXI: 596, S: 265, MINI: 265, XXS: 105, MICRO: 105, cart: 508, other: 512 };
+function modelLine(x) {
+  if (!x.model) return h('span', { class: 'small' }, 'Not set');
+  if (x.model === 'other') return h('span', {}, `${x.modelOther?.name || 'Not listed'} · `, h('span', { class: 'mono' }, `${x.modelOther?.h || '?'} mm`), ' · Not listed');
+  const m = c.getModel(x.model);
+  if (!m) return h('span', { class: 'small' }, 'Model not on this list'); // TC-E18
+  return h('span', { class: 'mono' }, `${m.name} · ${m.w} × ${m.d} × ${m.h}`);
+}
+// Front profile, as Stack Ctrl draws it (SC-R12): lid break, side panels, latch on the lid,
+// size lines on T-Loc and Classic by height class, drawer fronts with a handle low and centred.
+function profile(m) {
+  const out = [], H = m.h - (m.foot || 0), y = (mm) => `${Math.round(1000 * mm / H) / 10}%`;
+  if (m.kind === 'cart') return out;
+  const lid = m.kind === 'tb' ? 0 : 30;
+  if (lid) out.push(['pl-lid', `top:${y(lid)}`]);
+  if (m.kind !== 'tool') out.push(['pl-col', `top:${y(lid)};left:22%`], ['pl-col', `top:${y(lid)};left:78%`]);
+  const nd = m.kind === 'combi' ? 1 : m.drawers;
+  if (nd > 0) {
+    const top0 = m.kind === 'combi' ? H - (H - lid) * 0.4 : lid, d = (H - top0) / nd;
+    for (let i = 0; i < nd; i++) { const t = top0 + i * d; if (i > 0 || m.kind === 'combi') out.push(['pl-drw', `top:${y(t)}`]); out.push(['pl-hdl', `top:${y(t + d * 0.72)};height:${y(Math.min(14, d * 0.2))}`]); }
+  } else if (m.gen !== 'S3' && m.kind !== 'tool' && H >= 100) {
+    const n = H <= 135 ? 1 : H <= 190 ? 2 : H <= 240 ? 3 : H <= 340 ? 4 : 5, cy = lid + (H - lid) * 0.55;
+    for (let i = 0; i < n; i++) { const t = cy + (i - (n - 1) / 2) * 9; out.push(['pl-rib', `top:${y(t)};left:3%`], ['pl-rib', `top:${y(t)};left:81%`]); }
+  }
+  if (m.kind !== 'tb') out.push(['pl-latch', `top:${y(Math.max(0, lid - 22))};height:${y(Math.min(46, H * 0.36))}`]);
+  return out;
+}
+function glyph(m) {
+  const w = Math.round((BOX_W[m.fp] || 396) / 12), hh = Math.max(6, Math.round(m.h / 10));
+  return h('span', { class: 'glyph', 'aria-hidden': 'true' }, h('i', { style: `width:${w}px;height:${hh}px` }, profile(m).map(([cls, st]) => h('b', { class: cls, style: st }))));
+}
+function modelRow(m, pick, extra = '') {
+  return h('button', { type: 'button', class: `mrow${pick === m.id ? ' sel' : ''}`, 'aria-pressed': String(pick === m.id), onclick: () => { S.modelSel = m.id; render(); } },
+    glyph(m), h('span', { class: 'nm' }, h('b', {}, m.name), h('small', {}, extra || m.aka.filter((a) => !/^Systainer[³3] /.test(a) && !m.name.endsWith(a)).slice(0, 2).join(' · ') || GENERATIONS[m.gen])),
+    h('span', { class: 'sz mono' }, `${m.w} × ${m.d} × ${m.h}`), h('span', { class: 'tg' }, !m.sold && h('span', { class: 'tag' }, 'Not sold now')));
+}
+function modelPanel(x) {
+  const r = rec(), found = c.findModels(S.modelQ);
+  const tools = c.itemsIn(r, x.id, true).filter((i) => i.brand === 'Festool' && SHIPS_IN[i.name]);
+  const ships = tools.length ? c.getModel(SHIPS_IN[tools[0].name]) : null;
+  const groups = [];
+  for (const g of Object.keys(GENERATIONS)) for (const fp of [...new Set(found.filter((m) => m.gen === g).map((m) => m.fp))]) {
+    const rows = found.filter((m) => m.gen === g && m.fp === fp);
+    groups.push({ name: `${GENERATIONS[g]}${g === 'S3' || g === 'TL' || g === 'C' ? ` · ${fp}` : ''}`, rows });
+  }
+  const other = S.modelSel === 'other';
+  return h('div', { class: 'panel' },
+    h('div', { class: 'sub' }, h('h3', {}, 'Systainer model for ', h('span', { class: 'mono' }, x.id)), h('span', { class: 'small' }, "Sets the box's size, which Stack Ctrl draws. Nothing else changes.")),
+    h('div', { class: 'fbar' },
+      searchBox(S.modelQ, 'Any name: M 187, SYS 2, T-Loc III, sort', (v) => { S.modelQ = v; render(); requestAnimationFrame(() => { const i = $('modelQ'); i.focus(); i.setSelectionRange(v.length, v.length); }); }, 'modelQ'),
+      h('span', { class: 'count' }, h('b', {}, c.fmt(found.length)), ` of ${SYSTAINERS.length} models`)),
+    h('div', { class: 'list tall', style: 'max-height:560px' },
+      ships && !S.modelQ && [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, `Ships in · ${tools[0].name}`), h('span', { class: 'gc' }, '1')), modelRow(ships, S.modelSel, 'From the catalog')],
+      groups.flatMap((g) => [h('div', { class: 'ghead', style: 'cursor:default' }, h('span', { class: 'gn' }, g.name), h('span', { class: 'gc' }, c.fmt(g.rows.length))), ...g.rows.map((m) => modelRow(m, S.modelSel))]),
+      h('button', { type: 'button', class: `mrow${other ? ' sel' : ''}`, onclick: () => { S.modelSel = 'other'; render(); } }, h('span', { class: 'glyph' }, h('i', { style: 'width:33px;height:19px;border-style:dashed' })), h('span', { class: 'nm' }, h('b', {}, 'Not listed'), h('small', {}, 'Type a name and a height in mm')), h('span', {}), h('span', {}))),
+    other && h('div', { class: 'row' }, field('Name · up to 28', inp('mname', x.modelOther?.name || '', { id: 'mname', maxlength: 28 })), field('Height on its feet, mm', inp('mh', x.modelOther?.h || '', { id: 'mh', inputmode: 'numeric' }))),
+    h('div', { class: 'row' },
+      h('button', { type: 'button', class: 'key go', disabled: !S.modelSel, onclick: () => {
+        const id = x.id, sel = S.modelSel;
+        if (sel === 'other') { const nm = $('mname').value.trim(), hv = parseInt($('mh').value, 10); if (!nm || !(hv > 0)) return; change(() => c.setModel(rec(), id, 'other', { other: { name: nm, h: hv } }), { containers: [id] }); }
+        else change(() => c.setModel(rec(), id, sel), { containers: [id] });
+        const m = c.getModel(sel), k = m?.drawers || 0;
+        S.modelPick = ''; render();
+        if (k > 0 && !c.compsOf(rec(), id).length) drawersDialog(id, k); // TC-R136: offered, never added unasked
+      } }, other ? 'Use this' : S.modelSel ? `Use ${c.getModel(S.modelSel)?.name || ''}` : 'Pick a model'),
+      x.model && h('button', { type: 'button', class: 'key', onclick: () => { change(() => c.setModel(rec(), x.id, ''), { containers: [x.id] }); S.modelPick = ''; render(); } }, 'Clear model'),
+      h('button', { type: 'button', class: 'key', onclick: () => { S.modelPick = ''; render(); } }, 'Cancel'),
+      h('span', { class: 'sp' }), h('span', { class: 'small' }, 'TANOS and Festool boxes only.')));
+}
+// TC-R139: one model on the boxes a search found
+function modelManyDialog(ids) {
+  const r = rec();
+  openDialog(`Set a Systainer model on ${nOf(ids.length, 'box', 'boxes')}`, [
+    field('Model, by any name', inp('m', '', { list: 'model-names', placeholder: 'SYS3 M 187' })),
+    h('datalist', { id: 'model-names' }, SYSTAINERS.map((m) => h('option', { value: m.name }))),
+    h('p', { class: 'small', style: 'margin:0' }, 'Boxes whose kind of box takes no model, such as bags and chests, are skipped.')], (f) => {
+    const m = c.findModel(f.m.value);
+    if (!m) return 'Pick a model from the list, such as SYS3 M 187 or SYS 2 TL.';
+    clearUndo();
+    let res; change(() => { res = c.setModelMany(r, ids, m.id); }, { containers: ids });
+    render();
+    offerUndo(`Set ${m.name} on ${nOf(res.set.length, 'box', 'boxes')}${res.skipped.length ? `, ${res.skipped.length} skipped` : ''}`, res.undo);
+  }, 'Set');
+}
 function setFieldDialog() {
   const r = rec(), uids = [...S.sel];
   openDialog(`Set a field on ${uids.length} ${uids.length === 1 ? 'tool' : 'tools'}`, [
@@ -907,7 +1001,7 @@ const mq = matchMedia(`(max-width:${c.PHONE_MAX}px)`);
 S.phone = mq.matches;
 mq.addEventListener('change', () => { S.phone = mq.matches; S.sel.clear(); S.tick = null; render(); });
 (async () => {
-  try { S.rec = await loadRecord(); } catch { S.saveFailed = true; }
+  try { S.rec = await loadRecord(); if (S.rec) c.ensureKinds(S.rec); } catch { S.saveFailed = true; }
   S.low = (await storageUse()) > 0.9;
   S.gh = loadConn();
   if (S.gh) { try { S.sync = await loadSync(); } catch { S.sync = null; } }
