@@ -74,6 +74,21 @@ export function client(repo, token, fetchFn = (...a) => fetch(...a)) {
       return { error: explain(r.status, repo, 'write to') };
     },
     writeRecord(rec, sha, message) { return this.write(RECORD_PATH, writeBackup(rec), sha, message); },
+    // TC-R170: the files in a folder, such as proposals/
+    async list(path) {
+      const r = await call(`/contents/${path}`);
+      if (r.status === 404) return { files: [] };
+      if (r.status !== 200 || !Array.isArray(r.json)) return { error: explain(r.status, repo, 'read') };
+      return { files: r.json.filter((e) => e.type === 'file').map((e) => ({ name: e.name, path: e.path, sha: e.sha })) };
+    },
+    // TC-R171: a photo from the photo repo, as bytes, held only while shown
+    async blob(sha) {
+      const r = await call(`/git/blobs/${sha}`);
+      if (r.status !== 200) return { error: explain(r.status, repo, 'read') };
+      const s = atob(String(r.json.content).replace(/\s/g, ''));
+      const bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+      return { bytes };
+    },
   };
 }
 

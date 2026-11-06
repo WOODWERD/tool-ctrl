@@ -2,6 +2,12 @@
 
 What changed in each version of [Tool Ctrl](https://woodwerd.github.io/tool-ctrl/), newest first. Versions are x-numbers while Tool Ctrl is a public beta.
 
+## x0.0.10 · 2026-11-05
+- From photos: when your own Claude has read photos taken with Photo Ctrl, a From photos tab shows each set's proposed boxes, models and tools to add, change or decline.
+- Each change can be chosen to see it outlined in the photo. Photos come from your photo repo and are never kept.
+- Changes read for sure or as likely come ticked; guesses come unticked. A new box takes the next free number, or keeps the number on its old label when that number is free.
+- Tools added this way are marked Photo, and Undo takes back the whole set.
+
 ## x0.0.9 · 2026-11-03
 - Find, under the header on every view: one search for tools, boxes and drawers. On a computer, press / to jump to it.
 - Case, spaces, punctuation and word order don't matter, so "ets125" finds the ETS 125. A number alone is read as a box number: "14", "ww14" and "WW 14" all open WW-014.

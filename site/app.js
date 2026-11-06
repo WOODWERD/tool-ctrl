@@ -7,6 +7,7 @@ import { client, repoError } from './github.js';
 import { syncOnce, waiting } from './sync.js';
 import { tickList as catalogList } from './catalog.js';
 import { SYSTAINERS, GENERATIONS, SHIPS_IN } from './systainers.js';
+import { planProposal, applyRows, reviewed, waitingProposals, summary, PROPOSALS_DIR } from './proposals.js';
 
 const $ = (id) => document.getElementById(id);
 // h('div', {class: 'x', onclick: fn}, 'text', child): every string goes in as text, never as markup
@@ -39,6 +40,7 @@ const S = {
   warF: '', warQ: '', warSel: '', plan: null, planFile: '', renumber: true, closeGaps: false, kindOfBox: 'Systainer', drawerRows: true, over: null, note: '',
   undo: null, phone: false, low: false, saving: false, saveFailed: false,
   gh: null, sync: null, syncState: 'off', syncErr: null, conflict: null, choice: null, ghNote: '', connecting: false, renamedNote: '',
+  props: [], propI: 0, propRows: null, propSel: '', propPhoto: 0, propPics: null, propNote: '',
   find: '', findRetired: false, findOpen: {}, fromFind: '', findScroll: 0, mark: '', asked: '',
 };
 const rec = () => S.rec;
@@ -105,6 +107,7 @@ async function applySync(res, snap) {
   S.sync = { ...S.sync, base: res.base, sha: res.sha, lastSync: new Date().toISOString(), lastMsg: res.message || S.sync?.lastMsg || '' };
   S.syncState = 'ok'; S.syncErr = null;
   await saveSync(S.sync);
+  loadProposals();
   leds(); render();
 }
 async function connect(repo, token) {
@@ -214,14 +217,18 @@ function render() {
   $('cBoxes').textContent = c.fmt(r.containers.filter((x) => x.status === 'active').length);
   $('cItems').textContent = c.fmt(live.length);
   $('cWar').textContent = c.fmt(c.warrantyCounts(r).total);
+  $('cPhotos').textContent = c.fmt(S.props.length);
+  $('vPhotos').hidden = S.phone || !S.props.length; // TC-R170
+  if (S.view === 'photos' && (S.phone || !S.props.length)) S.view = 'boxes';
   for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === S.view));
   const finding = !!S.find.trim();
   document.body.classList.toggle('open', !finding && ((S.view === 'boxes' && !!S.box) || (S.view === 'warranty' && !!S.warSel)));
-  const v = finding ? findView() : { boxes: boxesView, items: itemsView, warranty: warrantyView, record: recordView }[S.view]();
-  $('app').replaceChildren(...[S.asked && askedStrip(), v].filter(Boolean));
+  const v = finding ? findView() : { boxes: boxesView, items: itemsView, warranty: warrantyView, record: recordView, photos: photosView }[S.view]();
+  const fromPhotos = S.phone && S.props.length ? h('div', { class: 'health warn' }, h('b', {}, `${nOf(S.props.length, 'set')} from photos`), h('span', {}, 'Review them in Tool Ctrl on a computer or iPad.')) : null;
+  $('app').replaceChildren(...[S.asked && askedStrip(), fromPhotos, v].filter(Boolean));
   if (!finding && S.mark) requestAnimationFrame(() => document.querySelector('.irow.mark')?.scrollIntoView({ block: 'center' }));
 }
-for (const b of document.querySelectorAll('#views button')) b.onclick = () => { S.view = b.dataset.view; setFind(''); render(); };
+for (const b of document.querySelectorAll('#views button')) b.onclick = () => { if (S.view === 'photos' && b.dataset.view !== 'photos') dropPics(); S.view = b.dataset.view; setFind(''); render(); };
 
 // ---- Find (TC-S17, TC-S18, TC-R150 to TC-R160) ----
 const fi = $('find');
@@ -1148,6 +1155,144 @@ function setFieldDialog() {
     S.sel.clear(); commit({ items: uids }); render();
     offerUndo(`Set ${k} on ${uids.length} ${uids.length === 1 ? 'tool' : 'tools'}`, () => { for (const [u, old] of before) c.getItem(r, u)[k] = old; });
   }, 'Set');
+}
+
+
+// ---- From photos (TC-S19, TC-R170 to TC-R179) ----
+// Proposals Photo Ctrl's skill wrote to the data repo. Photos are shown from the person's photo repo
+// through Photo Ctrl's connection in this browser, held only while shown, and never kept (TC-R34, TC-A63).
+async function loadProposals() {
+  if (!S.gh) return;
+  const api = client(S.gh.repo, S.gh.token);
+  const l = await api.list(PROPOSALS_DIR);
+  if (l.error) return;
+  const files = [];
+  for (const f of l.files.filter((x) => x.name.endsWith('.json'))) {
+    const t = await api.read(f.path);
+    if (t.error || t.missing) continue;
+    try { files.push({ path: f.path, sha: t.sha, json: JSON.parse(t.text) }); } catch { /* not a proposal */ }
+  }
+  const before = S.props[S.propI]?.path;
+  S.props = waitingProposals(files);
+  S.propI = Math.max(0, S.props.findIndex((p) => p.path === before));
+  if (S.propRows && S.props[S.propI]?.path !== before) { S.propRows = null; dropPics(); }
+  render();
+}
+// Photo Ctrl's connection, read only, from the same browser (Q7). Never creates Photo Ctrl's store.
+function photoConn() {
+  return new Promise((ok) => {
+    let rq; try { rq = indexedDB.open('photo-ctrl'); } catch { ok(null); return; }
+    rq.onupgradeneeded = () => { rq.transaction.abort(); };
+    rq.onerror = () => ok(null);
+    rq.onsuccess = () => {
+      const d = rq.result;
+      if (!d.objectStoreNames.contains('meta')) { d.close(); ok(null); return; }
+      const g = d.transaction('meta').objectStore('meta').get('conn');
+      g.onsuccess = () => { d.close(); ok(g.result && g.result.repo && g.result.token ? g.result : null); };
+      g.onerror = () => { d.close(); ok(null); };
+    };
+  });
+}
+function dropPics() { for (const u of S.propPics?.urls || []) if (u) URL.revokeObjectURL(u); S.propPics = null; }
+async function loadPics(prop) {
+  const conn = await photoConn();
+  if (!conn || conn.repo !== prop.photoRepo) { S.propPics = { none: true, repo: prop.photoRepo }; render(); return; }
+  S.propPics = { loading: true, urls: [] }; render();
+  const api = client(conn.repo, conn.token);
+  const l = await api.list(`sets/${prop.set}`);
+  if (l.error || !l.files.length) { S.propPics = { none: true, gone: true, repo: prop.photoRepo }; render(); return; } // PH-E08
+  const photos = l.files.filter((f) => /^\d+\.jpg$/.test(f.name)).sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10));
+  const urls = [];
+  for (const f of photos) { const b = await api.blob(f.sha); urls.push(b.bytes ? URL.createObjectURL(new Blob([b.bytes], { type: 'image/jpeg' })) : null); }
+  if (S.props[S.propI]?.json.set !== prop.set) { for (const u of urls) if (u) URL.revokeObjectURL(u); return; }
+  S.propPics = { urls }; render();
+}
+const SURE_CLS = { Sure: 's', Likely: 'l', Guess: 'g' };
+function outlineShot(url, row) {
+  const w = row?.where?.find((x) => x.photo === S.propPhoto + 1);
+  const pts = (w?.outline || []).filter((p) => Array.isArray(p) && p.length === 2).map(([x, y]) => [Math.min(1, Math.max(0, x)) * 100, Math.min(1, Math.max(0, y)) * 100]);
+  const shot = h('div', { class: 'shot' }, h('img', { src: url, alt: `Photo ${S.propPhoto + 1} of the set` }));
+  if (pts.length >= 3) { // TC-R179: the chosen row outlined, the rest dimmed
+    const list = pts.map((p) => p.map((n) => +n.toFixed(2)).join(',')).join(' ');
+    const dash = row.sure === 'Guess' ? '7 5' : 'none';
+    shot.append(h('span', { html: `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0H100V100H0Z M${list.replace(/ /g, ' L')} Z" fill="rgba(12,11,9,.55)" fill-rule="evenodd"/><polygon points="${list}" fill="none" stroke="#0C0B09" stroke-width="5" vector-effect="non-scaling-stroke"/><polygon points="${list}" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="${dash}" vector-effect="non-scaling-stroke"/></svg>` }));
+    const top = Math.min(...pts.map((p) => p[1])), bottom = Math.max(...pts.map((p) => p[1])), left = Math.min(...pts.map((p) => p[0]));
+    shot.append(h('span', { class: `hlt${top < 8 ? ' below' : ''}`, style: `left:${Math.max(1, left)}%;top:${top < 8 ? bottom : top}%` }, `${row.what} · ${row.text} · ${row.sure}`));
+  }
+  return shot;
+}
+function pickRow(row) {
+  S.propSel = row.key;
+  const w = row.where?.[0]; if (w) S.propPhoto = w.photo - 1;
+  render();
+}
+function photosView() {
+  const f = S.props[S.propI];
+  if (!f) return h('section', { class: 'tier' }, h('div', { class: 'pad' }, h('p', { class: 'small' }, 'No sets from photos are waiting.')));
+  const prop = f.json;
+  if (!S.propRows) { const p = planProposal(rec(), prop, (id) => SYSTAINERS.find((m) => m.id === id)?.name || id); S.propRows = p; S.propSel = p.rows.find((x) => x.where?.length)?.key || ''; S.propPhoto = (p.rows.find((x) => x.key === S.propSel)?.where?.[0]?.photo || 1) - 1; }
+  if (!S.propPics) loadPics(prop);
+  const plan = S.propRows, rows = plan.rows, sel = rows.find((x) => x.key === S.propSel);
+  const ticked = rows.filter((x) => x.enabled && x.checked).length, can = rows.filter((x) => x.enabled).length;
+  const nav = h('div', { class: 'row' },
+    h('button', { type: 'button', class: 'key', disabled: S.propI === 0, onclick: () => goSet(S.propI - 1) }, '‹ Previous set'),
+    h('button', { type: 'button', class: 'key', disabled: S.propI >= S.props.length - 1, onclick: () => goSet(S.propI + 1) }, 'Next set ›'),
+    h('span', { class: 'sp' }), h('a', { class: 'guidelink', href: 'https://woodwerd.github.io/photo-ctrl/' }, 'Open Photo Ctrl'));
+  const pics = S.propPics || {};
+  const left = h('section', { class: 'tier' },
+    h('div', { class: 'tier-h' }, h('span', { class: 'n' }, 1), h('h2', {}, `Set ${S.propI + 1} of ${S.props.length}`), h('span', { class: 'tier-d mono' }, `${prop.set} · ${prop.shows || ''}`), h('span', { class: 'tier-s idle' }, `Read ${prop.read || ''}`)),
+    h('div', { class: 'pad' },
+      pics.urls?.length ? outlineShot(pics.urls[S.propPhoto] || pics.urls[0], sel) : pics.loading ? h('p', { class: 'small' }, 'Getting the photos from your photo repo…')
+        : h('div', { class: 'health' }, h('b', {}, pics.gone ? 'The photos are gone' : 'Photos not shown here'), h('span', {}, pics.gone ? 'This set was deleted from the photo repo. You can still review it from what was read.' : `Connect Photo Ctrl to ${pics.repo || 'your photo repo'} in this browser to see the photos beside the review.`)),
+      pics.urls?.length > 1 && h('div', { class: 'row' }, pics.urls.map((u, i) => h('button', { type: 'button', class: `key${i === S.propPhoto ? ' on' : ''}`, 'aria-pressed': String(i === S.propPhoto), onclick: () => { S.propPhoto = i; render(); } }, `Photo ${i + 1}`))),
+      h('p', { class: 'small' }, 'Choose a change to see it outlined. Photos are shown from your photo repo and never kept in Tool Ctrl.'),
+      nav));
+  const rowEl = (r) => h('div', { class: `chg${r.checked ? '' : ' off'}${r.enabled ? '' : ' na'}${r.key === S.propSel ? ' on' : ''}`, onclick: (e) => { if (!e.target.closest('input,select,button,label')) pickRow(r); } },
+    r.enabled ? h('input', { type: 'checkbox', checked: r.checked, 'aria-label': `${r.what}: ${r.text}`, onchange: (e) => { r.checked = e.target.checked; render(); } }) : h('span', {}),
+    h('div', {}, h('div', { class: 'what' }, r.what), h('div', { class: 'val' }, r.text)),
+    h('span', { class: `sure ${SURE_CLS[r.sure]}` }, r.sure),
+    r.why && h('div', { class: 'why' }, r.why),
+    r.type === 'newBox' && r.checked && h('div', { class: 'acts' },
+      h('label', { class: 'small' }, 'Name ', h('input', { class: 'in', value: r.name, maxlength: c.LIMITS.name, style: 'width:180px', oninput: (e) => { r.name = e.target.value.toUpperCase(); } })),
+      h('label', { class: 'small' }, 'Model ', h('select', { class: 'in', onchange: (e) => { r.model = e.target.value; } }, h('option', { value: '' }, 'None'), SYSTAINERS.filter((m) => m.kind !== 'cart').map((m) => h('option', { value: m.id, selected: m.id === r.model }, m.name)))),
+      r.keep && h('label', { class: 'tick' }, h('input', { type: 'checkbox', checked: r.keepTicked, onchange: (e) => { r.keepTicked = e.target.checked; } }), ` Keep the label's number, ${r.keep}`)));
+  const right = h('section', { class: 'tier' },
+    h('div', { class: 'tier-h' }, h('span', { class: 'n' }, 2), h('h2', {}, 'Changes'), h('span', { class: 'tier-d' }, 'Sure and Likely are ticked'), h('span', { class: `tier-s ${ticked ? 'warn' : 'idle'}` }, `${ticked} of ${can} ticked`)),
+    h('div', { class: 'pad' },
+      plan.newer ? h('div', { class: 'health warn' }, h('b', {}, 'Needs a newer Tool Ctrl'), h('span', {}, 'This proposal was written in a newer format. Update Tool Ctrl to review it; it has been left as it is.'))
+        : h('div', {}, rows.map(rowEl)),
+      S.propNote && h('div', { class: 'health ok' }, h('b', {}, 'Added'), h('span', {}, S.propNote)),
+      !plan.newer && h('div', { class: 'row' },
+        h('button', { type: 'button', class: 'key go', disabled: !ticked, onclick: () => addProposal(f) }, ticked ? `Add ${nOf(ticked, 'change')}` : 'Nothing ticked'),
+        h('button', { type: 'button', class: 'key', onclick: () => goSet(S.propI + 1 < S.props.length ? S.propI + 1 : 0) }, 'Later'),
+        h('span', { class: 'sp' }), h('button', { type: 'button', class: 'key', onclick: () => declineProposal(f) }, 'Decline set')),
+      h('p', { class: 'small' }, 'Every value can be changed before adding. Added tools are marked Photo. Undo is offered until your next change.')));
+  return h('div', { class: S.phone ? 'stack' : 'split' }, left, right);
+}
+function goSet(i) { dropPics(); S.propI = Math.max(0, Math.min(S.props.length - 1, i)); S.propRows = null; S.propNote = ''; render(); }
+async function writeStatus(f, json, message) { // PH-R92: Tool Ctrl writes the status into the proposal file
+  if (!S.gh) return false;
+  const w = await client(S.gh.repo, S.gh.token).write(f.path, JSON.stringify(json, null, 2) + '\n', f.sha, message);
+  if (w.sha) { f.sha = w.sha; f.json = json; return true; }
+  return false;
+}
+async function addProposal(f) { // TC-R173
+  clearUndo();
+  const before = JSON.parse(JSON.stringify(rec())), prior = f.json;
+  const res = applyRows(rec(), f.json, S.propRows.rows, c.isoToday());
+  commit();
+  const ok = await writeStatus(f, reviewed(f.json, res.status, c.isoToday(), res.added), `Tool Ctrl: ${res.status.toLowerCase()} ${f.json.set}`);
+  S.props = S.props.filter((p) => p !== f);
+  S.propI = Math.min(S.propI, Math.max(0, S.props.length - 1)); S.propRows = null; dropPics();
+  S.propNote = `${summary(res.made)} from ${f.json.set}.${ok ? '' : ' The proposal file couldn\'t be marked; it will show again.'}`;
+  render();
+  offerUndo(`Added ${summary(res.made)} from photos`, () => { S.rec = before; writeStatus(f, prior, `Tool Ctrl: undo ${prior.set}`).then(loadProposals); });
+}
+async function declineProposal(f) {
+  if (!confirm(`Decline every change from ${f.json.set}? Nothing is added. The proposal stays in your repo, marked Declined.`)) return;
+  const ok = await writeStatus(f, reviewed(f.json, 'Declined', c.isoToday()), `Tool Ctrl: declined ${f.json.set}`);
+  if (!ok) { alert('GitHub didn\'t take the change. Try again when sync is working.'); return; }
+  S.props = S.props.filter((p) => p !== f); S.propI = Math.min(S.propI, Math.max(0, S.props.length - 1)); S.propRows = null; dropPics(); S.propNote = ''; render();
 }
 
 // ---------- start ----------
