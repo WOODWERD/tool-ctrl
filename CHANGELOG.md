@@ -2,6 +2,9 @@
 
 What changed in each version of [Tool Ctrl](https://woodwerd.github.io/tool-ctrl/), newest first. Versions are x-numbers while Tool Ctrl is a public beta.
 
+## x0.0.12 · 2026-11-06
+- The guide's menu marks the section you're reading with an amber bar.
+
 ## x0.0.11 · 2026-11-06
 - Set up GitHub, the step-by-step help for the private repo and token, now lives in the [WOODWERD Toolkit Guides](https://woodwerd.github.io/github.html), one page for every WOODWERD tool. The guide and the Connect form link there.
 

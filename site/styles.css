@@ -146,6 +146,7 @@ textarea.in{height:auto;min-height:68px;padding:8px;resize:vertical}
 .guide p,.guide li{margin:0}
 .guide ol,.guide ul{margin:0;padding-left:21px;display:flex;flex-direction:column;gap:5px}
 .guide code{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
+@media (min-width:768px){.guide nav a{padding-left:8px}.guide nav a[aria-current="location"]{box-shadow:inset 2px 0 0 var(--accent);color:var(--ink);font-weight:500}}
 @media (max-width:767px){.guide{grid-template-columns:minmax(0,1fr)}.guide nav{position:static}}
 .panel{border:1px solid var(--strong);border-radius:8px;padding:13px;display:flex;flex-direction:column;gap:13px;background:var(--ground)}
 .panel h3,.sub h3{margin:0;font-size:var(--t-body);font-weight:600}
