@@ -745,7 +745,7 @@ function githubArea() {
     const auth = !!S.gh;
     const f = h('form', { class: 'stack', onsubmit: (e) => { e.preventDefault(); connect(auth ? S.gh.repo : e.target.repo.value, e.target.token.value); } },
       !auth && h('p', { class: 'small', style: 'margin:0' }, 'Keep your record in a private repo of your own, to sync it between devices and keep a history of every change. Make the repo private on GitHub, then a fine-grained token for that one repo.'),
-      !auth && h('p', { class: 'small', style: 'margin:0' }, 'New to GitHub? Follow ', h('a', { href: 'https://woodwerd.github.io/box-ctrl/github.html', target: '_blank', rel: 'noopener noreferrer' }, 'Set up GitHub'), ', step by step.'),
+      !auth && h('p', { class: 'small', style: 'margin:0' }, 'New to GitHub? Follow ', h('a', { href: 'https://woodwerd.github.io/github.html', target: '_blank', rel: 'noopener noreferrer' }, 'Set up GitHub'), ', step by step.'),
       auth ? h('div', { class: 'health bad' }, h('b', {}, 'GitHub refused the token'), h('span', {}, `${S.syncErr.text.replace(/^GitHub refused the token\. /, '')} ${(() => { const n = waiting(S.sync?.base, rec()); return n ? `${nOf(n, 'change')} ${n === 1 ? 'is' : 'are'} waiting on this device; nothing is lost.` : ''; })()}`))
         : h('label', { class: 'f' }, h('span', {}, 'Repo · owner/name'), h('input', { class: 'in m', name: 'repo', autocomplete: 'off', spellcheck: 'false', placeholder: 'owner/ctrl-data', value: loadConn()?.repo || '' })),
       h('label', { class: 'f' }, h('span', {}, S.phone ? 'Token · Contents read only is enough here' : 'Token · Contents read and write, this repo only'), h('input', { class: `in m${auth ? ' bad' : ''}`, name: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false' })),
