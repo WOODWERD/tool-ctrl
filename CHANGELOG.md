@@ -2,6 +2,9 @@
 
 What changed in each version of [Tool Ctrl](https://woodwerd.github.io/tool-ctrl/), newest first. Versions are x-numbers while Tool Ctrl is a public beta.
 
+## x0.0.13 · 2026-11-06
+- The guide says Tool Ctrl shares its GitHub repo and token with Box Ctrl, rather than with every WOODWERD tool. Some tools now keep a repo of their own.
+
 ## x0.0.12 · 2026-11-06
 - The guide's menu marks the section you're reading with an amber bar.
 
